@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title id="tituloNoticia">AGENCIA BEAT — Noticia</title>
+  <link rel="stylesheet" href="estilos.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- BANNER SUPERIOR -->
+<div id="bannerTop" class="banner-top"><div class="banner-contenido">PUBLICIDAD 728x90</div></div>
+
+<!-- CABECERA (igual que index) -->
+<header class="cabecera">
+  <div class="contenedor-header">
+    <div class="logo-federal">
+      <h1>AGENCIA <span>BEAT</span></h1>
+      <small>Red Federal de Noticias</small>
+    </div>
+    <div class="widgets-cabecera">
+      <div class="widget-dolar">
+        <span>DÓLAR BLUE: $<span id="dolarBlue">1545</span></span>
+        <span>|</span>
+        <span>OFICIAL: $<span id="dolarOficial">1510</span></span>
+      </div>
+      <div class="widget-clima">
+        <span>🌡️ <span id="climaTemp">18°C</span> | <span id="climaCiudad">La Plata</span></span>
+      </div>
+    </div>
+  </div>
+  <nav class="menu-principal">
+    <ul>
+      <li><a href="index.html">Inicio</a></li>
+      <li><a href="?cat=politica">Política</a></li>
+      <li><a href="?cat=economia-argentina">Economía</a></li>
+      <li><a href="?cat=gremiales">Gremiales</a></li>
+      <li><a href="?cat=judiciales">Judiciales</a></li>
+      <li><a href="?cat=sociedad">Sociedad</a></li>
+      <li><a href="?cat=deportes">Deportes</a></li>
+      <li><a href="?cat=internacionales">Internacionales</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- CONTENEDOR DE NOTICIA -->
+<main class="contenedor-noticia">
+  <article id="noticiaCompleta">
+    <div id="categoriaNoticia" class="categoria-badge"></div>
+    <h1 id="tituloNoticiaContenido"></h1>
+    <div class="meta-noticia">
+      <span id="fechaNoticia"></span>
+      <span>|</span>
+      <span id="fuenteNoticia">Agencia Beat</span>
+    </div>
+    <div id="imagenNoticia" class="imagen-destacada"></div>
+    <div id="cuerpoNoticia" class="cuerpo-noticia"></div>
+  </article>
+
+  <!-- Volver -->
+  <div class="volver-inicio">
+    <a href="index.html">← Volver al inicio</a>
+  </div>
+</main>
+
+<!-- PIE -->
+<footer class="pie-pagina" id="piePagina">
+  <p>© 2026 AGENCIA BEAT — Red Federal de Noticias</p>
+  <p><small>Dirección: Calle 48 N° 726, La Plata, Argentina</small></p>
+  <div id="publicidadFooter"></div>
+</footer>
+
+<script src="conector.js"></script>
+</body>
+</html>
