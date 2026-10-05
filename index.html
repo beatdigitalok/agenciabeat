@@ -1,92 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AGENCIA BEAT — Noticias Federales</title>
-  <link rel="stylesheet" href="estilos.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
-</head>
-<body>
-
-<!-- BANNER SUPERIOR (Publicidad) -->
-<div id="bannerTop" class="banner-top">
-  <div class="banner-contenido">PUBLICIDAD 728x90</div>
-</div>
-
-<!-- CABECERA -->
-<header class="cabecera">
-  <div class="contenedor-header">
-    <div class="logo-federal" id="logoContainer">
-      <h1>AGENCIA <span>BEAT</span></h1>
-      <small>Red Federal de Noticias</small>
-    </div>
-    <div class="widgets-cabecera">
-      <div class="widget-dolar" id="widgetDolar">
-        <span>DÓLAR BLUE: $<span id="dolarBlue">1545</span></span>
-        <span>|</span>
-        <span>OFICIAL: $<span id="dolarOficial">1510</span></span>
-      </div>
-      <div class="widget-clima" id="widgetClima">
-        <span>🌡️ <span id="climaTemp">18°C</span> | <span id="climaCiudad">La Plata</span></span>
-      </div>
-    </div>
-  </div>
-  <nav class="menu-principal">
-    <ul>
-      <li><a href="index.html" class="activo">Inicio</a></li>
-      <li><a href="?cat=politica">Política</a></li>
-      <li><a href="?cat=economia-argentina">Economía</a></li>
-      <li><a href="?cat=gremiales">Gremiales</a></li>
-      <li><a href="?cat=judiciales">Judiciales</a></li>
-      <li><a href="?cat=sociedad">Sociedad</a></li>
-      <li><a href="?cat=deportes">Deportes</a></li>
-      <li><a href="?cat=internacionales">Internacionales</a></li>
-    </ul>
-  </nav>
-</header>
-
-<!-- CONTENEDOR PRINCIPAL -->
-<main class="contenedor-principal">
-
-  <!-- NOTICIA DESTACADA (Slider o bloque grande) -->
-  <section class="destacado-principal" id="destacadoPrincipal">
-    <!-- Se llena con JavaScript desde la configuración -->
-  </section>
-
-  <!-- COLUMNA DE NOTICIAS (Grilla) -->
-  <div class="zona-noticias-sidebar">
-
-    <section class="seccion-noticias">
-      <h2 class="titulo-seccion" id="nombreSeccion">Últimas Noticias</h2>
-      <div class="grilla-noticias" id="bloqueNoticias">
-        <p class="cargando">Cargando noticias de la red federal...</p>
-      </div>
-
-      <!-- PAGINACIÓN -->
-      <div class="paginacion">
-        <button id="btnAnterior" class="btn-pag" disabled>‹ Anterior</button>
-        <span id="controlPaginas">Página 1</span>
-        <button id="btnSiguiente" class="btn-pag" disabled>Siguiente ›</button>
-      </div>
-    </section>
-
-    <!-- BARRA LATERAL (WIDGETS) -->
-    <aside class="barra-lateral" id="barraLateral">
-      <!-- Widgets se cargan dinámicamente desde la configuración -->
-    </aside>
-
-  </div>
-</main>
-
-<!-- PIE DE PÁGINA -->
-<footer class="pie-pagina" id="piePagina">
-  <p>© 2026 AGENCIA BEAT — Red Federal de Noticias</p>
-  <p><small>Dirección: Calle 48 N° 726, La Plata, Argentina</small></p>
-  <div id="publicidadFooter" class="publicidad-footer"></div>
-</footer>
-
-<script src="conector.js"></script>
-</body>
-</html>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Agencia Beat — La noticia hoy. Información federal, política, economía, sociedad, gremiales, espectáculos y deportes.">
+<title>Agencia Beat — La noticia hoy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="estilos.css">
+</head><body>
+<div class="topline"><div class="wrap"><span id="fechaActual"></span><span>AGENCIA BEAT · RED FEDERAL</span></div></div>
+<header class="cabecera"><div class="wrap brandrow"><a class="marca" href="index.html"><strong>AGENCIA <b>BEAT</b></strong><span>LA NOTICIA HOY</span></a><div class="header-ad">ESPACIO PUBLICITARIO</div></div>
+<nav class="menu-principal"><div class="wrap navscroll"><a class="activo" href="index.html">Inicio</a><a href="?cat=politica">Política</a><a href="?cat=economia-argentina">Economía</a><a href="?cat=gremiales">Gremiales</a><a href="?cat=judiciales">Judiciales</a><a href="?cat=sociedad">Sociedad</a><a href="?cat=deportes">Deportes</a><a href="?cat=espectaculos">Espectáculos</a><a href="?cat=internacionales">Internacionales</a></div></nav></header>
+<main class="wrap main"><section class="destacado-principal" id="destacadoPrincipal"><div class="skeleton hero-skeleton"></div></section><div class="zona-noticias-sidebar"><section class="seccion-noticias"><div class="sectionhead"><div><span class="eyebrow">AGENCIA BEAT</span><h1 id="nombreSeccion">Últimas noticias</h1></div></div><div class="grilla-noticias" id="bloqueNoticias"><p class="cargando">Cargando noticias...</p></div><div class="paginacion"><button id="btnAnterior" class="btn-pag" disabled>← Anterior</button><span id="controlPaginas">Página 1</span><button id="btnSiguiente" class="btn-pag" disabled>Siguiente →</button></div></section><aside class="barra-lateral" id="barraLateral"></aside></div></main>
+<footer class="pie-pagina"><div class="wrap footergrid"><div><div class="footerbrand">AGENCIA <b>BEAT</b></div><p>La noticia hoy · Red Federal de Noticias</p></div><div><strong>Agencia Beat</strong><p>Información independiente y distribución de noticias.</p></div></div><div class="wrap copyright">© 2026 Agencia Beat. Todos los derechos reservados.</div></footer>
+<script src="conector.js"></script></body></html>
