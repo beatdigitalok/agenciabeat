@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const {PGlite}=await import(process.env.PGLITE_MODULE||'@electric-sql/pglite');
+const db=new PGlite();
+await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
+await db.exec(await readFile(new URL('./preview.sql',import.meta.url),'utf8'));
+const source={blogger_blog_id:'100',blogger_post_id:'200',titulo:'Original',categoria:'politica',estado:'borrador',source_updated_at:'2026-10-06T10:00:00Z'};
+const call=async(action,payload={},revision=null)=> (await db.query('select public.beat_editorial_preview_change($1,$2,$3,$4,$5::jsonb,$6) as result',['agenciabeat','100','200',action,JSON.stringify(payload),revision])).rows[0].result;
+await db.exec('set role service_role');
+let r=await call('sync',source);assert.equal(r.row.revision,1);
+r=await call('sync',source);assert.equal(r.unchanged,true);
+r=await call('edit',{categoria:'deportes'},1);assert.equal(r.row.overrides.categoria,'deportes');
+r=await call('edit',{titulo:'Edición antigua'},1);assert.equal(r.error,'conflict');
+r=await call('trash',{},2);assert.ok(r.row.deleted_at);
+r=await call('sync',{...source,estado:'publicado',source_updated_at:'2026-10-06T11:00:00Z'});assert.ok(r.row.deleted_at);assert.equal(r.row.overrides.categoria,'deportes');assert.equal(r.row.source.estado,'publicado');
+r=await call('sync',{...source,source_updated_at:'2026-10-06T09:00:00Z'});assert.equal(r.unchanged,true);
+r=await call('restore',{},4);assert.equal(r.row.deleted_at,null);assert.equal(r.row.overrides.categoria,'deportes');
+r=await call('reset',{},5);assert.deepEqual(r.row.overrides,{});
+const count=(await db.query('select count(*)::int as n from public.beat_editorial_preview')).rows[0].n;assert.equal(count,1);
+const audit=(await db.query('select count(*)::int as n from public.beat_editorial_preview_audit')).rows[0].n;assert.equal(audit,6);
+await assert.rejects(()=>call('edit',{sitio_id:'otra'},6));
+for(const role of ['anon','authenticated']){await db.exec('reset role; set role '+role);await assert.rejects(()=>db.query('select * from public.beat_editorial_preview'));await assert.rejects(()=>call('sync',source));}
+await db.exec('reset role');
+const rls=(await db.query("select relrowsecurity from pg_class where relname='beat_editorial_preview'")).rows[0];assert.equal(rls.relrowsecurity,true);
+await db.close();console.log('PASS SQL: migración, identidad única, sync idempotente, edición, conflicto, papelera, sync conserva borrado/override, fuente antigua, restauración, reset, auditoría, campos permitidos, permisos anon/authenticated y RLS. Sin conexiones externas. Concurrencia multiproceso pendiente.');
