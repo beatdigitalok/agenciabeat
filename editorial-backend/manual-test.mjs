@@ -19,3 +19,11 @@ test('Lectura pública exige publicado y excluye papelera; publicación válida 
  r=await worker.fetch(req('/api/manual/change',{id:'12345678-1234-1234-1234-123456789012',expected_revision:1,action:'edit',fields:{estado:'publicado'}}),env);assert.equal(r.status,200);
  r=await worker.fetch(new Request('https://test/api/public/manual'),{...env,ENVIRONMENT:'production'});assert.equal(r.status,503);assert.equal(calls.length,2);
 });
+
+test('IA privada: configuración, generación sin guardar y rechazo de salida incompleta',async()=>{
+ let calls=[];const aiEnv={...env,AI_PREVIEW_ENABLED:'true',GEMINI_API_KEY:'test-secret',GEMINI_TEXT_MODEL:'gemini-test'};globalThis.fetch=async(u,o)=>{calls.push({u,o});return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({titulo:'Título',bajada:'Bajada',contenido:'Cuerpo',prompt_imagen:'Ilustración',pendientes:[]})}]}}]});};
+ const body={material:'Información de base suficiente para redactar una noticia propia de prueba.'};let r=await worker.fetch(req('/api/manual/generate',body),env);assert.equal(r.status,503);assert.equal(calls.length,0);
+ r=await worker.fetch(req('/api/manual/generate',body),aiEnv);assert.equal(r.status,200);assert.equal((await r.json()).saved,false);assert.equal(calls.length,1);assert.match(calls[0].u,/generativelanguage.googleapis.com/);assert.equal(calls[0].o.headers['x-goog-api-key'],'test-secret');
+ r=await worker.fetch(new Request('https://test/api/manual/generate',{method:'POST',body:JSON.stringify(body)}),aiEnv);assert.equal(r.status,401);assert.equal(calls.length,1);
+ globalThis.fetch=async()=>Response.json({candidates:[{finishReason:'MAX_TOKENS'}]});r=await worker.fetch(req('/api/manual/generate',body),aiEnv);assert.equal(r.status,502);
+});
