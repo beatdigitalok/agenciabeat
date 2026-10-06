@@ -1,4 +1,4 @@
-// Generado desde core.mjs y worker.mjs. Worker separado de prueba.
+// Worker separado de prueba. Generado desde core.mjs y worker.mjs.
 class InputError extends Error {}
 const categories = ['politica','economia argentina','gremiales','judiciales','sociedad','deportes','espectaculos','internacionales','informacion general'];
 const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/-/g,' ');
@@ -32,7 +32,19 @@ const PROD='opnuuhnjdbczevvgtnbw.supabase.co';
 const reply=(data,status=200,origin='')=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff',...(origin?{'access-control-allow-origin':origin,'vary':'Origin'}:{})}});
 function databaseUrl(env) {const u=new URL(env.SUPABASE_PREVIEW_URL);if(u.protocol!=='https:'||!u.hostname.endsWith('.supabase.co')||u.hostname===PROD||u.username||u.password||u.port||u.pathname!=='/'||u.search||u.hash)throw new Error('Sólo se admite proyecto Supabase separado de prueba');return u.origin;}
 async function authorized(request,env){if(!env.EDITORIAL_ADMIN_TOKEN||env.EDITORIAL_ADMIN_TOKEN.length<32)return false;const actual=request.headers.get('authorization')||'',expected='Bearer '+env.EDITORIAL_ADMIN_TOKEN;const hash=async s=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));const a=await hash(actual),b=await hash(expected);let diff=0;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];return diff===0;}
-async function db(env,path,body){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:body?'POST':'GET',headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error('storage');return r.json();}
+function manualFields(value){
+ if(!value||typeof value!=='object'||Array.isArray(value))throw new InputError('Campos inválidos');
+ const out={},limits={titulo:1000,bajada:3000,contenido:500000,categoria:200,imagen_url:2048,imagen_tipo:30,estado:20};
+ for(const [key,val] of Object.entries(value)){
+  if(!(key in limits)||typeof val!=='string'||val.length>limits[key])throw new InputError('Campo no permitido o demasiado largo');
+  if(['titulo','categoria'].includes(key)&&!val.trim())throw new InputError('Campo vacío');
+  if(key==='estado'&&!['borrador','revision'].includes(val))throw new InputError('Estado inválido');
+  if(key==='imagen_tipo'&&!['sin_imagen','foto','ilustracion_ia'].includes(val))throw new InputError('Tipo de imagen inválido');
+  if(key==='imagen_url'&&val){let u;try{u=new URL(val);}catch{throw new InputError('Imagen inválida');}if(u.protocol!=='https:'||u.username||u.password)throw new InputError('Imagen requiere HTTPS');}
+  out[key]=val;
+ }return out;
+}
+async function db(env,path,body,method){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:method||(body?'POST':'GET'),headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json',prefer:'return=representation'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error('storage');return r.json();}
 export default {async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
  if(origin&&origin!==allowed)return reply({error:'Origen no permitido'},403);
  if(env.ENVIRONMENT!=='preview')return reply({error:'Servicio limitado a preview'},503,origin);
@@ -41,9 +53,19 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
  if(!await authorized(request,env))return reply({error:'Autorización requerida'},401,origin);
  try{
   if(url.pathname==='/api/editorial/list'&&request.method==='GET'){if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');const rows=await db(env,'beat_editorial_preview?sitio_id=eq.agenciabeat&order=changed_at.desc&limit=100');return reply({rows:rows.map(r=>({...r,effective:effective(r)}))},200,origin);}
+  if(url.pathname==='/api/manual/list'&&request.method==='GET'){const rows=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&order=updated_at.desc&limit=100');return reply({rows},200,origin);}
   if(request.method!=='POST')return reply({error:'Ruta o método no permitido'},404,origin);
   if(Number(request.headers.get('content-length'))>600000)return reply({error:'Solicitud demasiado grande'},413,origin);
   const raw=await request.text();if(new TextEncoder().encode(raw).length>600000)return reply({error:'Solicitud demasiado grande'},413,origin);const body=JSON.parse(raw);
+  if(['/api/manual/create','/api/manual/change'].includes(url.pathname)){
+   if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
+   if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');
+   if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');const rows=await db(env,'beat_manual_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},201,origin);}
+   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id||'')||!Number.isSafeInteger(body.expected_revision)||body.expected_revision<1||!['edit','trash','restore'].includes(body.action))throw new InputError('Acción o revisión inválida');
+   const fields=body.action==='edit'?manualFields(body.fields):{deleted_at:body.action==='trash'?new Date().toISOString():null};
+   const rows=await db(env,`beat_manual_preview?sitio_id=eq.agenciabeat&id=eq.${body.id}&revision=eq.${body.expected_revision}`,{...fields,revision:body.expected_revision+1,updated_at:new Date().toISOString()},'PATCH');
+   return rows.length?reply({row:rows[0]},200,origin):reply({error:'conflict',message:'Recargá la noticia antes de guardar'},409,origin);
+  }
   let action,postId,payload={};
   if(url.pathname==='/api/editorial/validate'){const source=normalizePost(body.post,env.BLOGGER_BLOG_ID);return reply({dry_run:true,source},200,origin);}
   if(url.pathname==='/api/editorial/sync'){
