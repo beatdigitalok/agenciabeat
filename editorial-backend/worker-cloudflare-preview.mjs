@@ -1,4 +1,4 @@
-// Worker separado de prueba. Generado desde core.mjs y worker.mjs.
+// Generado desde core.mjs y worker.mjs. Worker separado de prueba.
 class InputError extends Error {}
 const categories = ['politica','economia argentina','gremiales','judiciales','sociedad','deportes','espectaculos','internacionales','informacion general'];
 const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/-/g,' ');
@@ -38,7 +38,7 @@ function manualFields(value){
  for(const [key,val] of Object.entries(value)){
   if(!(key in limits)||typeof val!=='string'||val.length>limits[key])throw new InputError('Campo no permitido o demasiado largo');
   if(['titulo','categoria'].includes(key)&&!val.trim())throw new InputError('Campo vacío');
-  if(key==='estado'&&!['borrador','revision'].includes(val))throw new InputError('Estado inválido');
+  if(key==='estado'&&!['borrador','revision','publicado'].includes(val))throw new InputError('Estado inválido');
   if(key==='imagen_tipo'&&!['sin_imagen','foto','ilustracion_ia'].includes(val))throw new InputError('Tipo de imagen inválido');
   if(key==='imagen_url'&&val){let u;try{u=new URL(val);}catch{throw new InputError('Imagen inválida');}if(u.protocol!=='https:'||u.username||u.password)throw new InputError('Imagen requiere HTTPS');}
   out[key]=val;
@@ -50,6 +50,7 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
  if(env.ENVIRONMENT!=='preview')return reply({error:'Servicio limitado a preview'},503,origin);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':allowed,'access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'authorization,content-type','vary':'Origin'}});
  if(url.pathname==='/health'&&request.method==='GET')return reply({ok:true,service:'beat-editorial-preview',writes_enabled:env.PREVIEW_WRITES_ENABLED==='true'},200,origin);
+ if(url.pathname==='/api/public/manual'&&request.method==='GET'){try{const rows=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&estado=eq.publicado&deleted_at=is.null&select=id,titulo,bajada,contenido,categoria,imagen_url,imagen_tipo,created_at,updated_at&order=updated_at.desc&limit=100');return reply({rows},200,origin);}catch{return reply({error:'Noticias de preview no disponibles'},503,origin);}}
  if(!await authorized(request,env))return reply({error:'Autorización requerida'},401,origin);
  try{
   if(url.pathname==='/api/editorial/list'&&request.method==='GET'){if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');const rows=await db(env,'beat_editorial_preview?sitio_id=eq.agenciabeat&order=changed_at.desc&limit=100');return reply({rows:rows.map(r=>({...r,effective:effective(r)}))},200,origin);}
