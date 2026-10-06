@@ -10,7 +10,7 @@ Fecha: 2026-10-06 UTC.
 - Centro Multimedia carga las 60 noticias previstas por obtenerNoticiasMultimedia.
 - Noticia 1407: imagen de media.c5n.com carga con crossOrigin=anonymous; estado imagen OK en 1080x1350 (5 líneas) y 1080x1920 (6 líneas).
 - Caso sin imagen: se genera fondo y texto 1080x1920. El mensaje mezcla ausencia de imagen con error CORS: pendiente de mejorar.
-- Exportación PNG con imagen cargada directamente a través del Worker: canvas.toBlob produjo 1080x1350 (2097 KB) y 1080x1920 (2723 KB), sin SecurityError/CORS. Estado visible: PNG generado y descarga solicitada. La recepción del archivo en disco sigue sin confirmar: el evento download del navegador de prueba agotó su tiempo de espera.
+- Exportación PNG con imagen cargada directamente a través del Worker: canvas.toBlob produjo 1080x1350 (2097 KB) y 1080x1920 (2723 KB), sin SecurityError/CORS. Estado visible: PNG generado y descarga solicitada. El evento download del navegador remoto agotó su tiempo de espera, pero el propietario posteriormente envió ambos PNG de la noticia 1409; recepción efectiva confirmada.
 - Exportación actualizada para usar Blob, enlace temporal conectado al DOM y revocación de URL a los 60 segundos. Estado explícito de éxito/error. Guard de generación evita que cargas antiguas sobrescriban el formato más reciente; descarga deshabilitada mientras se genera. Node --check multimedia.js pasó; despliegue Pages verificado por los nuevos estados de UI.
 - Políticas RLS de Supabase y QA móvil: pendientes; la lectura pública funcional no demuestra aislamiento de permisos.
 
@@ -32,8 +32,12 @@ portal-config.js de agencia-beat-2.0 ya configura apiBase con la URL del Worker 
 
 ## Pendientes y límites
 
-- Verificar recepción efectiva de ambos PNG en navegador del propietario.
+- Recepción efectiva de PNG confirmada por archivos enviados por el propietario: noticia 1409, 1080x1350 (1887025 bytes) y 1080x1920 (2330128 bytes), PNG válidos y texto legible. No prueba por sí sola si esa noticia usó fallback proxy o CORS del origen directo.
 - Auditar RLS/políticas/buckets de Supabase con acceso autorizado: no se dispone de sesión administrativa. No se realizaron escrituras de prueba en la base de producción.
 - QA móvil real pendiente. CSS incluye breakpoint de 900px, pero no equivale a prueba en dispositivo.
 - Inventario completo de DNS, rutas y bindings de producción pendiente de acceso al dashboard Cloudflare; el navegador remoto no pudo superar la verificación de inicio de sesión.
 
+
+## Flujo editorial
+
+POLÍTICA es categoría predeterminada del RSS, no fallo del generador. El propietario corrige borradores en Blogger. Editor local de prueba preparado en editorial.html, con edición y papelera restaurable e integración al Centro Multimedia. Sin escrituras en Supabase. Ver EDITORIAL-PREVIEW.md para límites y requisitos de sincronización.
