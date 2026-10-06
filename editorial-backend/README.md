@@ -32,6 +32,8 @@ No se implementó barrido automático de todo Blogger, paginación de reconcilia
 
 ## Validación ejecutada
 
-node --test editorial-backend/test.mjs: 11 casos pasaron. Node syntax check pasó. Fetch simulado: sync sólo hace GET Blogger, dry-run no toca Supabase; errores de auth/origen/entorno bloquean. SQL revisado estáticamente; no ejecutado porque no existe conexión PostgreSQL/administrativa disponible. Concurrencia, RLS y transacciones deben probarse en el proyecto QA real antes de habilitar escrituras. No hay evidencia de despliegue ni prueba E2E persistente.
+node --test editorial-backend/test.mjs: 13 casos pasaron. Node syntax check pasó. Fetch simulado: sync sólo hace GET Blogger, dry-run no toca Supabase; errores de auth/origen/entorno bloquean. SQL revisado estáticamente; no ejecutado porque no existe conexión PostgreSQL/administrativa disponible. Concurrencia, RLS y transacciones deben probarse en el proyecto QA real antes de habilitar escrituras. No hay evidencia de despliegue ni prueba E2E persistente.
 
 Fuentes verificadas: https://developers.google.com/blogger/docs/3.0/reference/posts y /posts/get (status sólo admin, view ADMIN); https://supabase.com/docs/guides/database/functions (privilegios de funciones y security invoker).
+
+Para auditar la base actual sin cambios, ejecutar audit-current-readonly.sql y compartir únicamente sus resultados de metadatos. Permite diseñar la migración histórica sin adivinar columnas/RLS.
