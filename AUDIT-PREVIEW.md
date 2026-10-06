@@ -10,14 +10,15 @@ Fecha: 2026-10-06 UTC.
 - Centro Multimedia carga las 60 noticias previstas por obtenerNoticiasMultimedia.
 - Noticia 1407: imagen de media.c5n.com carga con crossOrigin=anonymous; estado imagen OK en 1080x1350 (5 líneas) y 1080x1920 (6 líneas).
 - Caso sin imagen: se genera fondo y texto 1080x1920. El mensaje mezcla ausencia de imagen con error CORS: pendiente de mejorar.
-- Descarga PNG: no confirmada. La espera de download agotó el tiempo del navegador de prueba. No es prueba de fallo del producto ni de éxito de exportación.
+- Exportación PNG con imagen cargada directamente a través del Worker: canvas.toBlob produjo 1080x1350 (2097 KB) y 1080x1920 (2723 KB), sin SecurityError/CORS. Estado visible: PNG generado y descarga solicitada. La recepción del archivo en disco sigue sin confirmar: el evento download del navegador de prueba agotó su tiempo de espera.
+- Exportación actualizada para usar Blob, enlace temporal conectado al DOM y revocación de URL a los 60 segundos. Estado explícito de éxito/error. Guard de generación evita que cargas antiguas sobrescriban el formato más reciente; descarga deshabilitada mientras se genera. Node --check multimedia.js pasó; despliegue Pages verificado por los nuevos estados de UI.
 - Políticas RLS de Supabase y QA móvil: pendientes; la lectura pública funcional no demuestra aislamiento de permisos.
 
-## Proxy preparado, NO desplegado
+## Proxy independiente desplegado y conectado
 
 worker.image-proxy.mjs es un Worker independiente y contiene únicamente /health y /api/image-proxy. No reemplazar el Worker rbd-api con este archivo.
 
-Crear un Worker separado llamado agencia-beat-image-preview, sin dominios personalizados, sin rutas, sin cron ni bindings de producción. Copiar worker.image-proxy.mjs como módulo. No necesita secretos.
+El propietario creó y desplegó el Worker separado agencia-beat-image-preview. Endpoint: https://agencia-beat-image-preview.beatdigitalok-bac.workers.dev. /health respondió HTTP 200 con ok:true y service:agencia-beat-image-preview. El proxy de una imagen de media.c5n.com respondió HTTP 200, image/avif y Access-Control-Allow-Origin para el preview. No se auditó desde sesión autenticada la totalidad de bindings/rutas del dashboard.
 
 Variables opcionales:
 - ALLOWED_ORIGINS: https://agenciabeat-preview.pages.dev
@@ -27,4 +28,12 @@ Controles: HTTPS, hosts exactos, sin credenciales en URL, redirecciones manuales
 
 Validación local con fetch simulado: salud; rechazo de HTTP/IP local; rechazo de host externo; rechazo de Origin externo; imagen aceptada con CORS; redirección a IP bloqueada; HTML rechazado; tamaño declarado excesivo rechazado. El comprobador sintáctico de Node pasó.
 
-Cuando el Worker independiente esté desplegado y validado, configurar apiBase del frontend de prueba con su URL. Actualmente apiBase permanece vacío. La integración con rbd-api y cualquier migración del dominio requieren autorización expresa del propietario.
+portal-config.js de agencia-beat-2.0 ya configura apiBase con la URL del Worker independiente; configuración publicada en Pages comprobada por HTTP. La integración con rbd-api y cualquier migración del dominio requieren autorización expresa del propietario.
+
+## Pendientes y límites
+
+- Verificar recepción efectiva de ambos PNG en navegador del propietario.
+- Auditar RLS/políticas/buckets de Supabase con acceso autorizado: no se dispone de sesión administrativa. No se realizaron escrituras de prueba en la base de producción.
+- QA móvil real pendiente. CSS incluye breakpoint de 900px, pero no equivale a prueba en dispositivo.
+- Inventario completo de DNS, rutas y bindings de producción pendiente de acceso al dashboard Cloudflare; el navegador remoto no pudo superar la verificación de inicio de sesión.
+
