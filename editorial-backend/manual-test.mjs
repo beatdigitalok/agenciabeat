@@ -31,3 +31,12 @@ test('IA privada: configuración, generación sin guardar y rechazo de salida in
 test('Diagnóstico Gemini muestra HTTP y motivo permitido, nunca respuesta cruda',async()=>{
 const e={...env,AI_PREVIEW_ENABLED:'true',GEMINI_API_KEY:'private-key',GEMINI_TEXT_MODEL:'gemini-test'};globalThis.fetch=async()=>Response.json({error:{message:'private-key',details:[{reason:'API_KEY_INVALID',metadata:{key:'private-key'}}]}},{status:400});const r=await worker.fetch(req('/api/manual/generate',{material:'Material de base suficientemente largo para una noticia de prueba.'}),e);const d=await r.json();assert.equal(d.upstream_status,400);assert.equal(d.reason,'API_KEY_INVALID');assert.ok(!JSON.stringify(d).includes('private-key'));
 });
+
+test('Ilustración: Storage preview, revisión explícita y producción bloqueada',async()=>{
+const e={...env,AI_PREVIEW_ENABLED:'true',IMAGE_PREVIEW_ENABLED:'true',GEMINI_API_KEY:'test',GEMINI_IMAGE_MODEL:'gemini-test-image'},body={prompt:'Una carpa de circo ilustrada bajo un cielo azul',aspect_ratio:'4:5'};let calls=[];
+globalThis.fetch=async(u,o)=>{calls.push({u,o});if(u.includes('/bucket/'))return Response.json({public:true});if(u.includes('generativelanguage'))return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{inlineData:{mimeType:'image/png',data:Buffer.from([137,80,78,71,13,10,26,10,0,0]).toString('base64')}}]}}]});return Response.json({Key:'generated/test'});};
+let r=await worker.fetch(req('/api/manual/generate-image',body),{...e,PREVIEW_WRITES_ENABLED:'false'});assert.equal(r.status,503);assert.equal(calls.length,0);
+r=await worker.fetch(req('/api/manual/generate-image',body),e);assert.equal(r.status,201);const d=await r.json();assert.equal(d.associated,false);assert.match(d.image_url,/tqxbwgirsytlplmxswyt.supabase.co\/storage\/v1\/object\/public\/beat-images-preview/);assert.equal(calls.length,3);assert.equal(calls[2].o.headers['x-upsert'],'false');assert.ok(calls[2].o.body instanceof Uint8Array);
+calls=[];r=await worker.fetch(req('/api/manual/generate-image',body),{...e,SUPABASE_PREVIEW_URL:'https://opnuuhnjdbczevvgtnbw.supabase.co'});assert.equal(r.status,503);assert.equal(calls.length,0);
+globalThis.fetch=async()=>Response.json({public:false});r=await worker.fetch(req('/api/manual/generate-image',body),e);assert.equal(r.status,503);
+});
