@@ -27,3 +27,7 @@ test('IA privada: configuración, generación sin guardar y rechazo de salida in
  r=await worker.fetch(new Request('https://test/api/manual/generate',{method:'POST',body:JSON.stringify(body)}),aiEnv);assert.equal(r.status,401);assert.equal(calls.length,1);
  globalThis.fetch=async()=>Response.json({candidates:[{finishReason:'MAX_TOKENS'}]});r=await worker.fetch(req('/api/manual/generate',body),aiEnv);assert.equal(r.status,502);
 });
+
+test('Diagnóstico Gemini muestra HTTP y motivo permitido, nunca respuesta cruda',async()=>{
+const e={...env,AI_PREVIEW_ENABLED:'true',GEMINI_API_KEY:'private-key',GEMINI_TEXT_MODEL:'gemini-test'};globalThis.fetch=async()=>Response.json({error:{message:'private-key',details:[{reason:'API_KEY_INVALID',metadata:{key:'private-key'}}]}},{status:400});const r=await worker.fetch(req('/api/manual/generate',{material:'Material de base suficientemente largo para una noticia de prueba.'}),e);const d=await r.json();assert.equal(d.upstream_status,400);assert.equal(d.reason,'API_KEY_INVALID');assert.ok(!JSON.stringify(d).includes('private-key'));
+});
