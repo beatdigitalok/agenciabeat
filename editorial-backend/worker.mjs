@@ -29,6 +29,22 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
   if(request.method!=='POST')return reply({error:'Ruta o método no permitido'},404,origin);
   if(Number(request.headers.get('content-length'))>600000)return reply({error:'Solicitud demasiado grande'},413,origin);
   const raw=await request.text();if(new TextEncoder().encode(raw).length>600000)return reply({error:'Solicitud demasiado grande'},413,origin);const body=JSON.parse(raw);
+  if(url.pathname==='/api/manual/generate-image'){
+   if(env.AI_PREVIEW_ENABLED!=='true'||env.IMAGE_PREVIEW_ENABLED!=='true'||env.PREVIEW_WRITES_ENABLED!=='true'||!env.GEMINI_API_KEY||!/^gemini-[a-z0-9.-]+$/.test(env.GEMINI_IMAGE_MODEL||'')||!env.SUPABASE_PREVIEW_SERVICE_KEY)return reply({error:'Configurá generación de imágenes en el Worker preview'},503,origin);
+   if(typeof body.prompt!=='string'||body.prompt.trim().length<20||body.prompt.length>5000||!['4:5','9:16','16:9'].includes(body.aspect_ratio))throw new InputError('Prompt o formato inválido');
+   const base=databaseUrl(env),bucket='beat-images-preview',headers={apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY};
+   const check=await fetch(base+'/storage/v1/bucket/'+bucket,{headers,signal:AbortSignal.timeout(10000)});if(!check.ok)return reply({error:'Creá el bucket público beat-images-preview en Supabase de prueba antes de generar'},503,origin);const info=await check.json();if(info.public!==true)return reply({error:'El bucket de ilustraciones preview debe ser público'},503,origin);
+   const prompt='Ilustración editorial conceptual para una noticia. No fotografía documental; no texto, logos ni marcas de agua dibujadas. No inventes personas reales ni presentes sucesos como evidencia fotográfica. Descripción: '+body.prompt;
+   const r=await fetch('https://generativelanguage.googleapis.com/v1/models/'+env.GEMINI_IMAGE_MODEL+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE'],responseFormat:{image:{aspectRatio:body.aspect_ratio,imageSize:'1K'}}}}),signal:AbortSignal.timeout(55000)});
+   if(!r.ok)return reply({error:'Gemini imágenes HTTP '+r.status+' · Revisá disponibilidad, permisos y cuota del modelo'},502,origin);
+   const result=await r.json(),candidate=result.candidates?.[0];if(candidate?.finishReason!=='STOP')return reply({error:'Generación incompleta o bloqueada. No se guardó imagen.'},502,origin);
+   const im=candidate.content?.parts?.find(p=>!p.thought&&p.inlineData)?.inlineData;if(!im||!['image/png','image/jpeg'].includes(im.mimeType)||typeof im.data!=='string'||im.data.length>11200000)return reply({error:'Imagen ausente o fuera de formato'},502,origin);
+   let bytes;try{bytes=Uint8Array.from(atob(im.data),c=>c.charCodeAt(0));}catch{return reply({error:'Imagen inválida'},502,origin);}
+   const png=bytes.length>8&&[137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v),jpeg=bytes.length>3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255;if(bytes.length>8388608||!(im.mimeType==='image/png'?png:jpeg))return reply({error:'Contenido de imagen inválido o mayor a 8 MB'},502,origin);
+   const name='generated/'+crypto.randomUUID()+(png?'.png':'.jpg');const upload=await fetch(base+'/storage/v1/object/'+bucket+'/'+name,{method:'POST',headers:{...headers,'content-type':im.mimeType,'x-upsert':'false'},body:bytes,signal:AbortSignal.timeout(15000)});
+   if(!upload.ok)return reply({error:'La ilustración se generó, pero no pudo guardarse en Storage. No se cambió la noticia.'},502,origin);
+   return reply({image_url:base+'/storage/v1/object/public/'+bucket+'/'+name,imagen_tipo:'ilustracion_ia',associated:false,aspect_ratio:body.aspect_ratio},201,origin);
+  }
   if(url.pathname==='/api/manual/generate'){
    if(env.AI_PREVIEW_ENABLED!=='true'||!env.GEMINI_API_KEY||!/^gemini-[a-z0-9.-]+$/.test(env.GEMINI_TEXT_MODEL||''))return reply({error:'Configurá Gemini en el Worker de prueba'},503,origin);
    if(typeof body.material!=='string'||body.material.trim().length<40||body.material.length>30000)throw new InputError('Pegá información de base: entre 40 y 30.000 caracteres');
