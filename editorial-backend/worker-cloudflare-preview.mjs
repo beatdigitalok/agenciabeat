@@ -1,3 +1,27 @@
+// Consulta de feeds autorizados; no escribe ni publica.
+function rssURL(value,hosts){
+ let u;try{u=new URL(value);}catch{throw new Error('URL RSS inválida');}
+ if(u.protocol!=='https:'||u.username||u.password||u.port||!hosts.includes(u.hostname)||!u.hostname.includes('.')||/^[\d.]+$/.test(u.hostname)||u.hostname.includes(':')||/\.(local|internal|localhost)$/.test(u.hostname))throw new Error('Dominio RSS no autorizado. Configurá RSS_ALLOWED_HOSTS en Cloudflare.');
+ return u;
+}
+function sourceURL(value){let u;try{u=new URL(value);}catch{throw new Error('Enlace original inválido');}if(u.protocol!=='https:'||u.username||u.password||u.port||!u.hostname.includes('.')||/^[\d.]+$/.test(u.hostname)||u.hostname.includes(':')||/\.(local|internal|localhost)$/.test(u.hostname))throw new Error('Enlace original requiere HTTPS público');u.hash='';for(const key of [...u.searchParams.keys()])if(/^utm_/i.test(key)||['fbclid','gclid'].includes(key))u.searchParams.delete(key);u.searchParams.sort();return u.href;}
+async function fetchRSS(value,env){
+ const hosts=(env.RSS_ALLOWED_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+ let target=rssURL(value,hosts);const signal=AbortSignal.timeout(15000);
+ for(let redirects=0;redirects<=3;redirects++){
+  const r=await fetch(target.href,{method:'GET',redirect:'manual',headers:{accept:'application/rss+xml, application/atom+xml, application/xml, text/xml'},signal});
+  if([301,302,303,307,308].includes(r.status)){await r.body?.cancel();if(redirects===3)throw new Error('Demasiadas redirecciones RSS');target=rssURL(new URL(r.headers.get('location'),target).href,hosts);continue;}
+  if(!r.ok){await r.body?.cancel();throw new Error('Fuente RSS HTTP '+r.status);}
+  if(!/(xml|rss|atom|text\/plain)/i.test(r.headers.get('content-type')||'')){await r.body?.cancel();throw new Error('La fuente no devolvió XML RSS/Atom');}
+  if(Number(r.headers.get('content-length'))>1048576){await r.body?.cancel();throw new Error('Feed mayor a 1 MB');}
+  if(!r.body)throw new Error('Feed vacío');const reader=r.body.getReader(),chunks=[];let bytes=0;
+  try{for(;;){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>1048576)throw new Error('Feed mayor a 1 MB');chunks.push(value);}}catch(e){await reader.cancel();throw e;}
+  const data=new Uint8Array(bytes);let offset=0;for(const part of chunks){data.set(part,offset);offset+=part.length;}const xml=new TextDecoder().decode(data);
+  if(/<!DOCTYPE|<!ENTITY/i.test(xml))throw new Error('Feed con DTD o entidades no admitido');
+  return {xml,feed_url:target.href};
+ }
+}
+
 // Worker separado de prueba. Generado desde core.mjs y worker.mjs.
 class InputError extends Error {}
 const categories = ['politica','economia argentina','gremiales','judiciales','sociedad','deportes','espectaculos','internacionales','informacion general'];
@@ -44,7 +68,7 @@ function manualFields(value){
   out[key]=val;
  }return out;
 }
-async function db(env,path,body,method){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:method||(body?'POST':'GET'),headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json',prefer:'return=representation'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error('storage');return r.json();}
+async function db(env,path,body,method){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:method||(body?'POST':'GET'),headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json',prefer:'return=representation'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok){let payload={};try{payload=await r.json();}catch{}const e=new Error('storage');e.code=payload.code;throw e;}return r.json();}
 export default {async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
  if(origin&&origin!==allowed)return reply({error:'Origen no permitido'},403);
  if(env.ENVIRONMENT!=='preview')return reply({error:'Servicio limitado a preview'},503,origin);
@@ -58,6 +82,7 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
   if(request.method!=='POST')return reply({error:'Ruta o método no permitido'},404,origin);
   if(Number(request.headers.get('content-length'))>600000)return reply({error:'Solicitud demasiado grande'},413,origin);
   const raw=await request.text();if(new TextEncoder().encode(raw).length>600000)return reply({error:'Solicitud demasiado grande'},413,origin);const body=JSON.parse(raw);
+  if(url.pathname==='/api/rss/fetch'){try{return reply(await fetchRSS(body.url,env),200,origin);}catch(e){return reply({error:e.name==='TimeoutError'?'La fuente RSS tardó demasiado':e.message},400,origin);}}
   if(url.pathname==='/api/manual/generate-image'){
    if(env.AI_PREVIEW_ENABLED!=='true'||env.IMAGE_PREVIEW_ENABLED!=='true'||env.PREVIEW_WRITES_ENABLED!=='true'||!env.GEMINI_API_KEY||!/^gemini-[a-z0-9.-]+$/.test(env.GEMINI_IMAGE_MODEL||'')||!env.SUPABASE_PREVIEW_SERVICE_KEY)return reply({error:'Configurá generación de imágenes en el Worker preview'},503,origin);
    if(typeof body.prompt!=='string'||body.prompt.trim().length<20||body.prompt.length>5000||!['4:5','9:16','16:9'].includes(body.aspect_ratio))throw new InputError('Prompt o formato inválido');
@@ -88,7 +113,11 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
   if(['/api/manual/create','/api/manual/change'].includes(url.pathname)){
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
    if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');
-   if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');const rows=await db(env,'beat_manual_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},201,origin);}
+   if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');
+ if(body.source){if(typeof body.source.url!=='string'||typeof body.source.feed_url!=='string'||typeof body.source.title!=='string'||body.source.title.length>1000)throw new InputError('Fuente RSS inválida');let original,feed;try{original=sourceURL(body.source.url);feed=sourceURL(body.source.feed_url);}catch(e){throw new InputError(e.message);}if(original.length>2048||feed.length>2048)throw new InputError('Enlace de fuente demasiado largo');fields.fuentes=[{tipo:'rss',url:original,feed_url:feed,titulo_original:body.source.title}];fields.estado='borrador';
+ const duplicate=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(original)+'&select=id&limit=1');if(duplicate.length)return reply({error:'Esta noticia RSS ya fue capturada, incluso si está en papelera',existing_id:duplicate[0].id},409,origin);
+ }
+ try{const rows=await db(env,'beat_manual_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},201,origin);}catch(e){if(e.code==='23505')return reply({error:'Esta noticia RSS ya fue capturada'},409,origin);throw e;}}
    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id||'')||!Number.isSafeInteger(body.expected_revision)||body.expected_revision<1||!['edit','trash','restore'].includes(body.action))throw new InputError('Acción o revisión inválida');
    const fields=body.action==='edit'?manualFields(body.fields):{deleted_at:body.action==='trash'?new Date().toISOString():null};
    const rows=await db(env,`beat_manual_preview?sitio_id=eq.agenciabeat&id=eq.${body.id}&revision=eq.${body.expected_revision}`,{...fields,revision:body.expected_revision+1,updated_at:new Date().toISOString()},'PATCH');
