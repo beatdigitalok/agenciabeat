@@ -1,4 +1,4 @@
-import {fetchRSS,sourceURL} from './rss-core.mjs';
+import {fetchRSS,sourceURL,parseFeedEntries} from './rss-core.mjs';
 import {normalizePost,validateOverrides,InputError,effective} from './core.mjs';
 const PROD='opnuuhnjdbczevvgtnbw.supabase.co';
 const reply=(data,status=200,origin='')=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff',...(origin?{'access-control-allow-origin':origin,'vary':'Origin'}:{})}});
@@ -17,7 +17,7 @@ function manualFields(value){
  }return out;
 }
 async function db(env,path,body,method){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:method||(body?'POST':'GET'),headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json',prefer:'return=representation'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok){let payload={};try{payload=await r.json();}catch{}const e=new Error('storage');e.code=payload.code;throw e;}return r.json();}
-export default {async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
+const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!=='true')return;await runRSSCampaign(env);},async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
  if(origin&&origin!==allowed)return reply({error:'Origen no permitido'},403);
  if(env.ENVIRONMENT!=='preview')return reply({error:'Servicio limitado a preview'},503,origin);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':allowed,'access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'authorization,content-type','vary':'Origin'}});
@@ -33,11 +33,12 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
   if(Number(request.headers.get('content-length'))>600000)return reply({error:'Solicitud demasiado grande'},413,origin);
   const raw=await request.text();if(new TextEncoder().encode(raw).length>600000)return reply({error:'Solicitud demasiado grande'},413,origin);const body=JSON.parse(raw);
 
+  if(url.pathname==='/api/rss/campaign/run'){if(!/^[0-9a-f-]{36}$/i.test(body.source_id||''))throw new InputError('Fuente inválida');return reply(await runRSSCampaign(env,body.source_id,true),200,origin);}
   if(url.pathname==='/api/rss/source/save'){
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
    const input=body.fields;if(!input||typeof input.nombre!=='string'||!input.nombre.trim()||input.nombre.length>150||typeof input.url!=='string'||input.url.length>2048||typeof input.categoria!=='string'||!input.categoria.trim()||input.categoria.length>200||!['groq','gemini'].includes(input.provider)||typeof input.active!=='boolean')throw new InputError('Datos de fuente inválidos');
    let canonical;try{canonical=sourceURL(input.url);}catch(e){throw new InputError(e.message);}
-   const fields={nombre:input.nombre.trim(),url:canonical,categoria:input.categoria.trim(),provider:input.provider,active:input.active,updated_at:new Date().toISOString()};
+   if(input.auto_enabled!==undefined&&typeof input.auto_enabled!=='boolean')throw new InputError('Automatización inválida');if(input.interval_minutes!==undefined&&![15,30,60,180,360,1440].includes(input.interval_minutes))throw new InputError('Frecuencia inválida');if(input.max_items!==undefined&&![1,2,3].includes(input.max_items))throw new InputError('Límite inválido');const fields={nombre:input.nombre.trim(),url:canonical,categoria:input.categoria.trim(),provider:input.provider,active:input.active,...(input.auto_enabled!==undefined?{auto_enabled:input.auto_enabled}:{}),...(input.interval_minutes!==undefined?{interval_minutes:input.interval_minutes}:{}),...(input.max_items!==undefined?{max_items:input.max_items}:{}),updated_at:new Date().toISOString()};
    try{let rows;if(body.id){if(!/^[0-9a-f-]{36}$/i.test(body.id)||!Number.isSafeInteger(body.expected_revision)||body.expected_revision<1)throw new InputError('Revisión de fuente inválida');rows=await db(env,'beat_rss_sources_preview?sitio_id=eq.agenciabeat&id=eq.'+body.id+'&revision=eq.'+body.expected_revision,{...fields,revision:body.expected_revision+1},'PATCH');if(!rows.length)return reply({error:'La fuente cambió en otra sesión. Recargá las fuentes.'},409,origin);}else rows=await db(env,'beat_rss_sources_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},body.id?200:201,origin);}catch(e){if(e instanceof InputError)throw e;if(e.code==='23505')return reply({error:'Esta URL ya está configurada como fuente'},409,origin);throw e;}
   }
   if(url.pathname==='/api/rss/fetch'){
@@ -105,3 +106,35 @@ export default {async fetch(request,env){const url=new URL(request.url),origin=r
   return reply(result,result.error==='conflict'?409:result.error==='not_found'?404:200,origin);
  }catch(e){return reply({error:e instanceof InputError?e.message:e instanceof SyntaxError?'JSON inválido':'Configuración o servicio no disponible'},e instanceof InputError||e instanceof SyntaxError?400:503,origin);}
 }};
+
+export default worker;
+
+async function runRSSCampaign(env,sourceId=null,force=false){
+ if(env.ENVIRONMENT!=='preview'||env.PREVIEW_WRITES_ENABLED!=='true'||env.AI_PREVIEW_ENABLED!=='true'||!env.EDITORIAL_ADMIN_TOKEN||env.EDITORIAL_ADMIN_TOKEN.length<32)throw Error('Configuración de campañas incompleta');
+ databaseUrl(env);
+ const claims=await db(env,'rpc/beat_rss_preview_claim',{p_id:sourceId,p_force:force});
+ const source=claims[0];if(!source)return {created:0,skipped:0,message:'Sin campañas pendientes o fuente ocupada/desactivada'};
+ const result={created:0,skipped:0,errors:[],at:new Date().toISOString()};
+ const call=async(path,body)=>{const response=await worker.fetch(new Request('https://editorial.internal'+path,{method:'POST',headers:{authorization:'Bearer '+env.EDITORIAL_ADMIN_TOKEN,'content-type':'application/json'},body:JSON.stringify(body)}),env);const data=await response.json();if(!response.ok){const e=Error(data.error||'Error de campaña');e.status=response.status;throw e;}return data;};
+ try{
+  const host=new URL(source.url).hostname;
+  const feed=await fetchRSS(source.url,{...env,RSS_ALLOWED_HOSTS:[host,host.startsWith('www.')?host.slice(4):'www.'+host].join(','),RSS_VERIFY_DNS:'true'});
+  const items=parseFeedEntries(feed.xml,feed.feed_url).slice(0,10);
+  let attempted=0;for(const item of items){
+   if(result.created>=source.max_items)break;
+   if(item.body.length<80){result.skipped++;continue;}
+   const exists=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(item.url)+'&select=id&limit=1');
+   if(exists.length){result.skipped++;continue;}
+   const fresh=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
+   if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
+   if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
+   const draft=generated.draft;
+   const again=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
+   if(!again[0]?.active||again[0].revision!==source.revision||(!force&&!again[0].auto_enabled)){result.errors.push('Campaña modificada durante la reescritura; propuesta descartada');break;}
+   if(draft.pendientes.length){result.errors.push('La IA indicó datos pendientes: la entrada requiere captura y revisión manual');result.skipped++;continue;}
+   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:draft.bajada,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;}catch(e){if(e.status===409)result.skipped++;else throw e;}
+  }
+ }catch(e){result.errors.push(e.name==='TimeoutError'?'Tiempo de consulta agotado':e.message);}
+ await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&lease_token=eq.'+source.lease_token,{lease_until:null,lease_token:null,last_checked_at:new Date().toISOString(),last_result:result,last_error:result.errors[0]||null},'PATCH');
+ return result;
+}
