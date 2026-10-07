@@ -1,30 +1,32 @@
-# RSS Preview — captura asistida
-## Activar
-1. Ejecutar rss-preview.sql sólo en tqxbwgirsytlplmxswyt.
-2. Desplegar worker-cloudflare-preview.mjs en beat-editorial-preview.
-3. Variable RSS_ALLOWED_HOSTS: dominios exactos separados por comas, sin esquema ni rutas.
-   Ejemplo de formato (no una fuente configurada): noticias.example.com,www.noticias.example.com.
-4. Abrir redactar-preview, Fuentes RSS, ingresar URL HTTPS y categoría inicial.
-5. Consultar -> Preparar reescritura -> elegir Groq/Gemini -> Generar -> Aplicar -> Guardar.
-## Comportamiento
-Consulta manual bajo token privado. 15 segundos, 1 MB, 3 redirecciones; cada destino debe estar autorizado.
-No envía credenciales a fuentes. RSS/Atom XML; sin DTD ni entidades.
-Máximo 40 entradas en pantalla, a partir de las primeras 80 del feed.
-No scrapea el artículo completo. Puede recibir únicamente resúmenes: el editor debe completar y verificar.
-Sólo toma imágenes enclosure/thumbnail/media indicadas por el feed; no infiere fotos de HTML.
-Configuraciones de fuente guardadas únicamente en el navegador, máximo 20.
-No hay cron, campañas automáticas ni consulta con la pestaña cerrada en esta fase.
-No publica en Blogger ni redes.
-## Persistencia
-La captura seleccionada se guarda en beat_manual_preview como borrador, aunque el cliente pida publicado.
-La fuente original y URL del feed se conservan en fuentes JSONB. Las ediciones conservan esa metadata.
-Eliminar parámetros utm_,fbclid,gclid y fragmento para identificar URL canónica básica.
-Índice único por sitio + URL: también incluye notas enviadas a papelera.
-El usuario puede publicar posteriormente en preview con una acción explícita.
-## Verificación
-19 pruebas previas + 3 pruebas RSS backend pasaron.
-Interfaz XML en navegador y consulta real pendientes; navegador local de prueba no disponible.
-Probar RSS y Atom, feed vacío, imágenes ausentes, doble guardado y títulos largos.
-## Siguiente fase
-Campañas persistentes del lado servidor, captura programada, cola de reescritura,
-registro de errores/reintentos y revisión editorial. Construir sin activar producción.
+# Fuentes RSS administradas en el panel
+## Activación inicial (una vez)
+- Supabase de prueba tqxbwgirsytlplmxswyt: ejecutar rss-sources-preview.sql.
+- Cloudflare: actualizar únicamente beat-editorial-preview con worker-cloudflare-preview.mjs.
+- No hace falta RSS_ALLOWED_HOSTS para las fuentes registradas. Puede quitarse.
+- No modificar rbd-api, Blogger, main ni producción.
+## Uso
+Fuentes RSS -> Actualizar fuentes -> Nueva fuente -> nombre, URL, categoría,
+motor (Groq/Gemini), activa/desactivada -> Guardar configuración.
+Elegir fuente -> Consultar RSS -> Preparar reescritura -> Generar -> Aplicar -> Guardar.
+Las fuentes se guardan en Supabase privado y están disponibles desde cualquier equipo.
+Cambiar URLs, proveedor, categoría o actividad no requiere cambiar Cloudflare.
+## Protección
+Token privado obligatorio. ENVIRONMENT=preview y DB producción rechazada.
+Fuentes con HTTPS sin credenciales, puertos ni destinos IP/locales.
+La consulta usa el ID de una fuente activa guardada, nunca una URL arbitraria del cliente.
+Redirecciones limitadas al host registrado y variante www; otros hosts requieren cambiar
+la URL en el panel al destino final. DNS A/AAAA comprobado antes de cada acceso.
+Sólo direcciones públicas admitidas. La comprobación DNS no fija la IP del fetch:
+revisar pinning/egress antes de ofrecer una plataforma pública multiusuario.
+No reenviar tokens editoriales ni claves Supabase a las fuentes.
+15 segundos, 1MB, XML sin DTD; clasificación RSS provisional; borradores obligatorios al crear.
+Índice único mantiene control de duplicados incluso en papelera.
+Ediciones de fuente usan expected_revision y devuelven409 ante conflicto.
+## Estado
+Fuentes persistentes y consulta manual implementadas.
+Última consulta y errores de red guardados en Supabase.
+Errores de parseo XML frontend se muestran en el panel, no se registran en servidor aún.
+No hay cron, cola ni campañas automáticas en esta fase.
+No hay publicación automática en Blogger ni redes.
+Sincronización Blogger original y auditoría visual completa pendientes.
+Backend: 25 pruebas pasan. QA con fuente real y en navegador pendiente.
