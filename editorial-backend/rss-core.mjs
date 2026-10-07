@@ -33,3 +33,26 @@ export async function checkPublicDNS(host,signal){
  const results=await Promise.all(['A','AAAA'].map(async type=>{const r=await fetch('https://cloudflare-dns.com/dns-query?name='+encodeURIComponent(host)+'&type='+type,{headers:{accept:'application/dns-json'},signal});if(!r.ok)throw Error('No se pudo verificar el dominio RSS');const data=await r.json();if(data.Status!==0)throw Error('El dominio RSS no resolvió correctamente');return (data.Answer||[]).filter(a=>[1,28].includes(a.type)).map(a=>a.data);}));
  const ips=results.flat();if(!ips.length||ips.some(ip=>!publicAddress(ip)))throw Error('La fuente RSS debe resolver sólo a direcciones públicas');
 }
+
+export function parseFeedEntries(xml,feed){
+ if(typeof xml!=='string'||xml.length>1048576||/<!DOCTYPE|<!ENTITY/i.test(xml))throw Error('Feed inválido');
+ const decode=s=>String(s||'').replace(/&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi,m=>{const names={'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&apos;':"'"};if(names[m])return names[m];const n=m[2].toLowerCase()==='x'?parseInt(m.slice(3,-1),16):parseInt(m.slice(2,-1),10);return n>0&&n<=0x10ffff?String.fromCodePoint(n):'';});
+ const clean=s=>decode(s).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+ const url=s=>{if(!s)return '';try{return sourceURL(new URL(decode(s).trim(),feed).href);}catch{return '';}};
+ let stack=[],current=null,entries=[],rootSeen=false;const seen=new Set();
+ const finish=()=>{if(!current)return;const title=clean(current.title).slice(0,1000),original=url(current.link||current.guid),body=clean(current.encoded||current.content||current.description||current.summary).slice(0,25000);if(title&&original&&!seen.has(original)){seen.add(original);entries.push({title,url:original,body,image:url(current.image),feed_url:feed});}current=null;};
+ for(const match of xml.matchAll(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<[^>]*>|[^<]+/g)){
+  const token=match[0];if(token.startsWith('<!--')||token.startsWith('<?'))continue;
+  if(token.startsWith('<![CDATA[')||!token.startsWith('<')){if(current){const value=token.startsWith('<![CDATA[')?token.slice(9,-3):decode(token);for(const frame of stack)if(frame.capture){current[frame.capture]=(current[frame.capture]||'')+value;if(current[frame.capture].length>60000)throw Error('Entrada RSS demasiado grande');}}continue;}
+  if(token.startsWith('</')){const name=token.slice(2,-1).trim();const frame=stack.pop();if(!frame||frame.name!==name)throw Error('XML RSS mal formado');if(frame.entry){finish();if(entries.length>=40)break;}continue;}
+  if(token.startsWith('<!'))throw Error('Declaración XML no admitida');
+  const m=token.match(/^<([A-Za-z_][\w:.-]*)\b/);if(!m)throw Error('XML RSS mal formado');const name=m[1],local=name.split(':').pop();const attrs={};for(const a of token.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g))attrs[a[1]]=decode(a[2]??a[3]);const self=/\/\s*>$/.test(token);
+  if(!rootSeen){if(!['rss','feed','RDF'].includes(local))throw Error('No es RSS/Atom');rootSeen=true;}
+  const entry=['item','entry'].includes(local);if(entry){if(current)throw Error('Entrada RSS anidada');current={};}
+  let capture=null;if(current&&['title','guid','encoded','content','description','summary'].includes(local)&&!attrs.url)capture=local;
+  if(current&&local==='link'&&(!attrs.rel||attrs.rel==='alternate')){if(attrs.href)current.link=attrs.href;else capture='link';}
+  if(current&&['enclosure','thumbnail','content'].includes(local)&&attrs.url&&((attrs.type||'').startsWith('image/')||local==='thumbnail'||attrs.medium==='image'))current.image=attrs.url;
+  if(!self){stack.push({name,capture,entry});if(stack.length>64)throw Error('XML demasiado anidado');}else if(entry)finish();
+ }
+ if(stack.length&&entries.length<40)throw Error('XML incompleto');if(!rootSeen)throw Error('Feed vacío');return entries;
+}
