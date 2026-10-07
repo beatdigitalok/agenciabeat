@@ -1,0 +1,1 @@
+window.PORTAL_CONFIG={sitioId:'agenciabeat',nombre:'AGENCIA BEAT',slogan:'La noticia hoy',color:'#004290',dominio:'https://www.agenciabeat.com',apiBase:'https://agencia-beat-image-preview.beatdigitalok-bac.workers.dev'};
