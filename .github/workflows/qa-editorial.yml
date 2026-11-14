@@ -1,0 +1,37 @@
+name: Agencia Beat 2.0 - QA editorial
+on:
+  push:
+    branches:
+      - agencia-beat-2.0
+    paths:
+      - 'editorial-backend/**'
+      - '.github/workflows/qa-editorial.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'editorial-backend/**'
+      - '.github/workflows/qa-editorial.yml'
+permissions:
+  contents: read
+jobs:
+  editorial-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar sintaxis
+        run: |
+          node --check editorial-backend/core.mjs
+          node --check editorial-backend/worker.mjs
+          node --check editorial-backend/editorial-safety.test.mjs
+          node --check editorial-backend/access-safety.test.mjs
+      - name: Pruebas de reglas editoriales y acceso
+        run: node --test editorial-backend/test.mjs editorial-backend/editorial-safety.test.mjs editorial-backend/access-safety.test.mjs
+      - name: Estado de despliegue
+        run: echo "QA local del repositorio; no despliega Worker, no escribe Supabase ni Blogger."
