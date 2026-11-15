@@ -77,7 +77,7 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!
   if(['/api/manual/create','/api/manual/change'].includes(url.pathname)){
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
    if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');
-   if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');
+   if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');fields.estado='borrador';
  if(body.source){if(typeof body.source.url!=='string'||typeof body.source.feed_url!=='string'||typeof body.source.title!=='string'||body.source.title.length>1000)throw new InputError('Fuente RSS inválida');let original,feed;try{original=sourceURL(body.source.url);feed=sourceURL(body.source.feed_url);}catch(e){throw new InputError(e.message);}if(original.length>2048||feed.length>2048)throw new InputError('Enlace de fuente demasiado largo');fields.fuentes=[{tipo:'rss',url:original,feed_url:feed,titulo_original:body.source.title}];fields.estado='borrador';
  const duplicate=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(original)+'&select=id&limit=1');if(duplicate.length)return reply({error:'Esta noticia RSS ya fue capturada, incluso si está en papelera',existing_id:duplicate[0].id},409,origin);
  }
