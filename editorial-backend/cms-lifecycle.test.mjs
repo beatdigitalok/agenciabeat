@@ -65,3 +65,47 @@ test('CMS manual: publicación pública excluye borradores y papelera en consult
   assert.equal((await r.json()).rows.length,1);
  }finally{globalThis.fetch=old;}
 });
+
+test('CMS manual: crear noticia propia inicia en borrador y no llama Blogger',async()=>{
+ const old=globalThis.fetch;let calls=0;
+ try{
+  globalThis.fetch=async(url,options)=>{
+   calls++;
+   assert.match(url,/qa-project\.supabase\.co\/rest\/v1\/beat_manual_preview$/);
+   assert.equal(options.method,'POST');
+   const payload=JSON.parse(options.body);
+   assert.equal(payload.titulo,'Nueva nota');
+   assert.equal(payload.estado,'borrador');
+   assert.equal(payload.sitio_id,'agenciabeat');
+   return Response.json([{id:uuid,revision:1,...payload}]);
+  };
+  const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'Nueva nota',categoria:'sociedad',contenido:'Contenido',estado:'borrador'}}),env);
+  assert.equal(r.status,201);
+  assert.equal((await r.json()).row.id,uuid);
+  assert.equal(calls,1);
+ }finally{globalThis.fetch=old;}
+});
+test('CMS manual: creación rechaza título vacío sin escritura',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=()=>{throw Error('No debe escribir en QA')};
+  const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'  '}}),env);
+  assert.equal(r.status,400);
+ }finally{globalThis.fetch=old;}
+});
+test('CMS manual: creación rechaza imagen insegura sin escritura',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=()=>{throw Error('No debe escribir en QA')};
+  const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'Nota',imagen_url:'http://inseguro.example/imagen.jpg'}}),env);
+  assert.equal(r.status,400);
+ }finally{globalThis.fetch=old;}
+});
+test('CMS manual: escritura desactivada impide alta incluso con token válido',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=()=>{throw Error('No debe escribir en QA')};
+  const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'Nota'}}),{...env,PREVIEW_WRITES_ENABLED:'false'});
+  assert.equal(r.status,403);
+ }finally{globalThis.fetch=old;}
+});
