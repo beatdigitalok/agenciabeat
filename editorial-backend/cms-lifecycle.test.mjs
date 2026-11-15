@@ -26,6 +26,7 @@ test('CMS manual: papelera y restauración usan PATCH condicional por revisión'
     count++;
     assert.equal(options.method,'PATCH');
     assert.match(url,/revision=eq\.7/);
+    assert.ok(url.includes(action==='restore'?'deleted_at=not.is.null':'deleted_at=is.null'));
     assert.match(url,/id=eq\.12345678-1234-4234-8234-123456789abc/);
     const payload=JSON.parse(options.body);
     assert.equal(payload.revision,8);
@@ -107,5 +108,29 @@ test('CMS manual: escritura desactivada impide alta incluso con token válido',a
   globalThis.fetch=()=>{throw Error('No debe escribir en QA')};
   const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'Nota'}}),{...env,PREVIEW_WRITES_ENABLED:'false'});
   assert.equal(r.status,403);
+ }finally{globalThis.fetch=old;}
+});
+
+test('CMS manual: edición de noticia en papelera no encuentra fila activa',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=async(url,options)=>{
+   assert.match(url,/deleted_at=is\.null/);
+   assert.equal(options.method,'PATCH');
+   return Response.json([]);
+  };
+  const r=await worker.fetch(req('/api/manual/change',{id:uuid,expected_revision:7,action:'edit',fields:{titulo:'No sobrescribir papelera'}}),env);
+  assert.equal(r.status,409);
+ }finally{globalThis.fetch=old;}
+});
+test('CMS manual: restauración sólo encuentra filas eliminadas',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=async(url)=>{
+   assert.match(url,/deleted_at=not\.is\.null/);
+   return Response.json([]);
+  };
+  const r=await worker.fetch(req('/api/manual/change',{id:uuid,expected_revision:7,action:'restore'}),env);
+  assert.equal(r.status,409);
  }finally{globalThis.fetch=old;}
 });
