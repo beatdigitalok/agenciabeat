@@ -84,7 +84,8 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!
  try{const rows=await db(env,'beat_manual_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},201,origin);}catch(e){if(e.code==='23505')return reply({error:'Esta noticia RSS ya fue capturada'},409,origin);throw e;}}
    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id||'')||!Number.isSafeInteger(body.expected_revision)||body.expected_revision<1||!['edit','trash','restore'].includes(body.action))throw new InputError('Acción o revisión inválida');
    const fields=body.action==='edit'?manualFields(body.fields):{deleted_at:body.action==='trash'?new Date().toISOString():null};
-   const rows=await db(env,`beat_manual_preview?sitio_id=eq.agenciabeat&id=eq.${body.id}&revision=eq.${body.expected_revision}`,{...fields,revision:body.expected_revision+1,updated_at:new Date().toISOString()},'PATCH');
+   const visibility=body.action==='restore'?'&deleted_at=not.is.null':'&deleted_at=is.null';
+   const rows=await db(env,`beat_manual_preview?sitio_id=eq.agenciabeat&id=eq.${body.id}&revision=eq.${body.expected_revision}${visibility}`,{...fields,revision:body.expected_revision+1,updated_at:new Date().toISOString()},'PATCH');
    return rows.length?reply({row:rows[0]},200,origin):reply({error:'conflict',message:'Recargá la noticia antes de guardar'},409,origin);
   }
   let action,postId,payload={};
