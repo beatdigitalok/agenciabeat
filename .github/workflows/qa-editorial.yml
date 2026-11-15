@@ -28,6 +28,7 @@ jobs:
       - name: Verificar sintaxis
         run: |
           node --check editorial-backend/core.mjs
+          node --check editorial-backend/rss-core.mjs
           node --check editorial-backend/worker.mjs
           node --check editorial-backend/editorial-safety.test.mjs
           node --check editorial-backend/access-safety.test.mjs
