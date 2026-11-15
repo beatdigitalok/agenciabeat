@@ -115,7 +115,7 @@ async function runRSSCampaign(env,sourceId=null,force=false){
  databaseUrl(env);
  const claims=await db(env,'rpc/beat_rss_preview_claim',{p_id:sourceId,p_force:force});
  const source=claims[0];if(!source)return {created:0,skipped:0,message:'Sin campañas pendientes o fuente ocupada/desactivada'};
- const result={created:0,skipped:0,errors:[],at:new Date().toISOString()};
+ const result={created:0,skipped:0,errors:[],skip_reasons:{short_content:0,duplicate:0,needs_review:0},at:new Date().toISOString()};
  const call=async(path,body)=>{const response=await worker.fetch(new Request('https://editorial.internal'+path,{method:'POST',headers:{authorization:'Bearer '+env.EDITORIAL_ADMIN_TOKEN,'content-type':'application/json'},body:JSON.stringify(body)}),env);const data=await response.json();if(!response.ok){const e=Error(data.error||'Error de campaña');e.status=response.status;throw e;}return data;};
  try{
   const host=new URL(source.url).hostname;
@@ -123,17 +123,17 @@ async function runRSSCampaign(env,sourceId=null,force=false){
   const items=parseFeedEntries(feed.xml,feed.feed_url).slice(0,10);
   let attempted=0;for(const item of items){
    if(result.created>=source.max_items)break;
-   if(item.body.length<80){result.skipped++;continue;}
+   if(item.body.length<80){result.skipped++;result.skip_reasons.short_content++;continue;}
    const exists=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(item.url)+'&select=id&limit=1');
-   if(exists.length){result.skipped++;continue;}
+   if(exists.length){result.skipped++;result.skip_reasons.duplicate++;continue;}
    const fresh=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
    if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
    if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
    const draft=generated.draft;
    const again=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
    if(!again[0]?.active||again[0].revision!==source.revision||(!force&&!again[0].auto_enabled)){result.errors.push('Campaña modificada durante la reescritura; propuesta descartada');break;}
-   if(draft.pendientes.length){result.errors.push('La IA indicó datos pendientes: la entrada requiere captura y revisión manual');result.skipped++;continue;}
-   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:draft.bajada,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;}catch(e){if(e.status===409)result.skipped++;else throw e;}
+   if(draft.pendientes.length){result.errors.push('La IA indicó datos pendientes: la entrada requiere captura y revisión manual');result.skipped++;result.skip_reasons.needs_review++;continue;}
+   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:draft.bajada,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;}catch(e){if(e.status===409){result.skipped++;result.skip_reasons.duplicate++;}else throw e;}
   }
  }catch(e){result.errors.push(e.name==='TimeoutError'?'Tiempo de consulta agotado':e.message);}
  await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&lease_token=eq.'+source.lease_token,{lease_until:null,lease_token:null,last_checked_at:new Date().toISOString(),last_result:result,last_error:result.errors[0]||null},'PATCH');
