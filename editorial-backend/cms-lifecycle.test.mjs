@@ -134,3 +134,18 @@ test('CMS manual: restauración sólo encuentra filas eliminadas',async()=>{
   assert.equal(r.status,409);
  }finally{globalThis.fetch=old;}
 });
+
+test('CMS manual: API impone borrador aunque cliente solicite publicación inmediata',async()=>{
+ const old=globalThis.fetch;
+ try{
+  globalThis.fetch=async(url,options)=>{
+   assert.equal(options.method,'POST');
+   const payload=JSON.parse(options.body);
+   assert.equal(payload.estado,'borrador');
+   return Response.json([{id:uuid,revision:1,...payload}]);
+  };
+  const r=await worker.fetch(req('/api/manual/create',{fields:{titulo:'Nota sin revisión',estado:'publicado'}}),env);
+  assert.equal(r.status,201);
+  assert.equal((await r.json()).row.estado,'borrador');
+ }finally{globalThis.fetch=old;}
+});
