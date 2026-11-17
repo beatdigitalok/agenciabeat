@@ -219,7 +219,10 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    const again=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
    if(!again[0]?.active||again[0].revision!==source.revision||(!force&&!again[0].auto_enabled)){result.errors.push('Campaña modificada durante la reescritura; propuesta descartada');break;}
    if(draft.pendientes.length){result.errors.push('La IA indicó datos pendientes: la entrada requiere captura y revisión manual');result.skipped++;continue;}
-   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:draft.bajada,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;}catch(e){if(e.status===409)result.skipped++;else throw e;}
+   // La IA puede devolver una bajada vacía. Usar únicamente texto presente en el RSS, sin inventar datos.
+   let summary=draft.bajada.trim();
+   if(!summary){const sourceText=item.body.replace(/\s+/g,' ').trim();const firstSentence=sourceText.match(/^.{45,240}?[.!?](?=\s|$)/)?.[0];summary=firstSentence||sourceText.slice(0,240).replace(/\s+\S*$/,'').trim();if(summary.length<45){result.errors.push('RSS sin texto suficiente para una bajada verificable; entrada omitida');result.skipped++;continue;}}
+   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:summary,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;}catch(e){if(e.status===409)result.skipped++;else throw e;}
   }
  }catch(e){result.errors.push(e.name==='TimeoutError'?'Tiempo de consulta agotado':e.message);}
  await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&lease_token=eq.'+source.lease_token,{lease_until:null,lease_token:null,last_checked_at:new Date().toISOString(),last_result:result,last_error:result.errors[0]||null},'PATCH');
