@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {normalizeBloggerUrl,buildHybridInventory} from './blogger-hybrid.mjs';
+const url='https://www.agenciabeat.com/2026/11/noticia.html?utm_source=prueba';
+assert.equal(normalizeBloggerUrl(url),'https://www.agenciabeat.com/2026/11/noticia.html');
+assert.equal(normalizeBloggerUrl('https://evil.example/2026/11/noticia.html'),null);
+assert.equal(normalizeBloggerUrl('http://www.agenciabeat.com/2026/11/noticia.html'),null);
+const report=buildHybridInventory([{url,title:'Prueba'},{url:'https://www.agenciabeat.com/2026/11/noticia.html'}]);
+assert.equal(report.rows.length,1);assert.equal(report.rejected.length,1);
+assert.equal(report.rows[0].canonical_url,'https://www.agenciabeat.com/2026/11/noticia.html');
+assert.equal(report.rows[0].portal_indexable,false);
+assert.equal(report.production_changes,false);
+console.log('Blogger híbrido: validaciones OK');

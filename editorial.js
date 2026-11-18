@@ -1,0 +1,14 @@
+(()=>{
+ const $=s=>document.querySelector(s);let rows=[],selected=null;
+ function status(message){$('#estado').textContent=message}
+ function effective(){return BeatEditorial.apply(rows,{includeDeleted:true})}
+ function render(){const q=$('#buscar').value.toLowerCase(),trash=$('#vista').value==='papelera';const visible=effective().filter(n=>!!n.deleted_at===trash&&(n.titulo+' '+n.categoria).toLowerCase().includes(q));$('#lista').replaceChildren();for(const n of visible){const b=document.createElement('button');b.type='button';b.className='mm-item';b.textContent=n.titulo+' · '+(n.categoria||'General');b.onclick=()=>select(n.id);$('#lista').appendChild(b)}$('#carga').textContent=visible.length+' noticias en esta vista (hasta 100 recientes).'}
+ function select(id){selected=id;const n=effective().find(n=>String(n.id)===String(id));if(!n)return;$('#vacio').hidden=true;$('#form').hidden=false;$('#identidad').textContent='Noticia '+n.id+' · copia de prueba';for(const [field,key] of [['titulo','titulo'],['categoria','categoria'],['imagen','imagen_url'],['contenido','contenido']])$('#'+field).value=n[key]||'';$('#estadoLocal').value=n.estado==='listo'?'listo':'borrador';$('#guardar').disabled=!!n.deleted_at;$('#borrar').hidden=!!n.deleted_at;$('#restaurar').hidden=!n.deleted_at;status(n.deleted_at?'En papelera local. Podés restaurarla.':'Edición local disponible.');}
+ function action(fn){try{fn()}catch(e){status('No se pudieron guardar los cambios locales: '+e.message)}}
+ $('#form').onsubmit=e=>{e.preventDefault();action(()=>{if(selected===null)return;const titulo=$('#titulo').value.trim(),categoria=$('#categoria').value.trim();if(!titulo||!categoria){status('Completá título y categoría.');return}const imagen=$('#imagen').value.trim();if(imagen&&new URL(imagen).protocol!=='https:'){status('La imagen debe usar HTTPS.');return}BeatEditorial.save(selected,{titulo,categoria,imagen_url:imagen,contenido:$('#contenido').value,estado:$('#estadoLocal').value});render();status('Copia local guardada. El Centro Multimedia usará esta categoría y título.')})};
+ $('#borrar').onclick=()=>action(()=>{if(selected===null)return;BeatEditorial.trash(selected,true);render();select(selected)});
+ $('#restaurar').onclick=()=>action(()=>{if(selected===null)return;BeatEditorial.trash(selected,false);$('#vista').value='activas';render();select(selected);status('Noticia restaurada en el preview.')});
+ $('#original').onclick=()=>action(()=>{if(selected===null)return;BeatEditorial.reset(selected);render();select(selected);status('Se volvió a los datos leídos de Supabase.')});
+ for(const id of ['buscar','vista'])$('#'+id).addEventListener('input',()=>action(render));
+ (async()=>{try{const r=await api(`noticias?select=*&sitio_id=eq.${encodeURIComponent(SITIO_ID)}&order=created_at.desc&limit=100`);rows=await r.json();render()}catch(e){$('#carga').textContent='No se pudieron cargar las noticias: '+e.message}})();
+})();
