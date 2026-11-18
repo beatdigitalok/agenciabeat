@@ -15,6 +15,11 @@ views.rss.append(by('rssPanel'));by('rssPanel').open=true;
 const editorialIntro=document.createElement('p');editorialIntro.className='muted editorial-intro';editorialIntro.textContent='CMS editorial de prueba integrado. Conserva sus controles de revisión, guardado y placas. No publica en la web oficial.';
 const editorialOpen=document.createElement('a');editorialOpen.href='cms-qa.html';editorialOpen.target='_blank';editorialOpen.rel='noopener';editorialOpen.textContent='Abrir mesa editorial en una pestaña aparte';
 const editorialFrame=document.createElement('iframe');editorialFrame.className='editorial-frame';editorialFrame.title='Mesa editorial QA de Agencia Beat';editorialFrame.dataset.src='cms-qa.html';editorialFrame.loading='lazy';views.mesa.append(editorialIntro,editorialOpen,editorialFrame);
+window.addEventListener('message',event=>{
+ if(event.origin!==location.origin||event.source!==editorialFrame.contentWindow||event.data?.type!=='beat-qa-editorial-ready')return;
+ const token=window.BeatPreviewAccess?.read();
+ if(token)editorialFrame.contentWindow.postMessage({type:'beat-qa-editorial-connect',token},location.origin);
+});
 views.multimedia.append(by('studio'));by('studio').open=true;
 views.config.append(by('accessPanel'));by('accessPanel').open=true;
 const help=document.createElement('div');help.className='card control-help';help.innerHTML='<h2>Conexiones del proyecto</h2><p>Noticias y campañas: Supabase de prueba. Reescritura: Groq o Gemini mediante el Worker editorial.</p><p>Las claves de los proveedores se administran en Cloudflare. No se ingresan en este panel.</p><p>Publicar en preview muestra la nota en la web de prueba. La publicación en Blogger y redes todavía no está conectada a este flujo.</p>';views.config.append(help);
