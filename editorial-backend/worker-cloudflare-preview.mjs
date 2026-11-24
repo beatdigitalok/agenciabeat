@@ -138,7 +138,24 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
  if(url.pathname==='/api/public/manual'&&request.method==='GET'){try{const rows=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&estado=eq.publicado&deleted_at=is.null&select=id,titulo,bajada,contenido,categoria,imagen_url,imagen_tipo,created_at,updated_at&order=updated_at.desc&limit=100');return reply({rows},200,origin);}catch{return reply({error:'Noticias de preview no disponibles'},503,origin);}}
  if(!await authorized(request,env))return reply({error:'Autorización requerida'},401,origin);
  try{
-  if(url.pathname==='/api/blogger/settings'&&request.method==='GET'){
+  if(url.pathname==='/api/blogger/send-draft'&&request.method==='POST'){
+ if(env.PREVIEW_WRITES_ENABLED!=='true'||env.BLOGGER_DRAFT_WRITES_ENABLED!=='true'||!/^\d+$/.test(env.BLOGGER_BLOG_ID||'')||!/^\d+$/.test(env.BLOGGER_QA_BLOG_ID||'')||env.BLOGGER_QA_BLOG_ID===env.BLOGGER_BLOG_ID)return reply({error:'Envío QA no habilitado'},403,origin);
+ const input=await request.json();
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.id||'')||!Number.isSafeInteger(input.expected_revision)||input.expected_revision<1||input.approved!==true)return reply({error:'Confirmación o revisión inválida'},400,origin);
+ const token=await bloggerAccessToken(env);
+ const claims=await db(env,'rpc/beat_blogger_manual_claim_preview',{p_article:input.id,p_revision:input.expected_revision});
+ if(!claims.length)return reply({error:'Envío bloqueado: revisar estado, revisión, límites o envíos pendientes'},409,origin);
+ const path='beat_blogger_queue_preview?article_id=eq.'+input.id+'&state=eq.sending';
+ let outcome;
+ try{
+ const article=(await db(env,'beat_manual_preview?id=eq.'+input.id+'&revision=eq.'+input.expected_revision+'&estado=eq.borrador&deleted_at=is.null'))[0];
+ if(!article){await db(env,path,{state:'pending'},'PATCH');return reply({error:'La noticia cambió; revisá antes de enviar'},409,origin);}
+ outcome=await sendBloggerDraft({env,article,token});
+ }catch{await db(env,path,{state:'reconcile',last_error:'Envío incierto: revisar Blogger'},'PATCH');return reply({error:'Envío incierto. No repetir sin revisar Blogger.'},502,origin);}
+ await db(env,path,outcome.ok?{state:'draft',post_id:outcome.postId,last_error:outcome.labelsMatch?null:'Revisar etiquetas Blogger'}:{state:'reconcile',last_error:'Respuesta no confirmada'},'PATCH');
+ return reply(outcome.ok?{ok:true,post_id:outcome.postId,labels_match:outcome.labelsMatch}:{error:'Respuesta incierta: revisar Blogger antes de repetir'},outcome.ok?200:502,origin);
+ }
+ if(url.pathname==='/api/blogger/settings'&&request.method==='GET'){
  const settings=(await db(env,'beat_blogger_settings_preview?id=eq.true'))[0];
  return reply({settings},200,origin);
  }
