@@ -132,7 +132,24 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED=
  if(url.pathname==='/api/public/manual'&&request.method==='GET'){try{const rows=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&estado=eq.publicado&deleted_at=is.null&select=id,titulo,bajada,contenido,categoria,imagen_url,imagen_tipo,created_at,updated_at&order=updated_at.desc&limit=100');return reply({rows},200,origin);}catch{return reply({error:'Noticias de preview no disponibles'},503,origin);}}
  if(!await authorized(request,env))return reply({error:'Autorización requerida'},401,origin);
  try{
-  if(url.pathname==='/api/editorial/list'&&request.method==='GET'){if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');const rows=await db(env,'beat_editorial_preview?sitio_id=eq.agenciabeat&order=changed_at.desc&limit=100');return reply({rows:rows.map(r=>({...r,effective:effective(r)}))},200,origin);}
+  if(url.pathname==='/api/blogger/settings'&&request.method==='GET'){
+ const settings=(await db(env,'beat_blogger_settings_preview?id=eq.true'))[0];
+ return reply({settings},200,origin);
+ }
+ if(url.pathname==='/api/blogger/settings'&&request.method==='POST'){
+ if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
+ const input=await request.json();
+ if(!['manual','drafts','publish'].includes(input.mode)||typeof input.enabled!=='boolean')return reply({error:'Modo inválido'},400,origin);
+ if(input.mode==='publish'&&input.enabled)return reply({error:'Publicación integral aún no habilitada en QA'},409,origin);
+ const rows=await db(env,'beat_blogger_settings_preview?id=eq.true',{mode:input.mode,enabled:input.mode!=='manual'&&input.enabled},'PATCH');
+ return reply({settings:rows[0]},200,origin);
+ }
+ if(url.pathname==='/api/blogger/stop'&&request.method==='POST'){
+ if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
+ const rows=await db(env,'beat_blogger_settings_preview?id=eq.true',{enabled:false},'PATCH');
+ return reply({settings:rows[0],notice:'No se iniciarán nuevos envíos; revisar solicitudes en curso'},200,origin);
+ }
+ if(url.pathname==='/api/editorial/list'&&request.method==='GET'){if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');const rows=await db(env,'beat_editorial_preview?sitio_id=eq.agenciabeat&order=changed_at.desc&limit=100');return reply({rows:rows.map(r=>({...r,effective:effective(r)}))},200,origin);}
 
   if(url.pathname==='/api/rss/sources'&&request.method==='GET'){try{const rows=await db(env,'beat_rss_sources_preview?sitio_id=eq.agenciabeat&order=created_at.desc&limit=100');return reply({rows},200,origin);}catch{return reply({error:'Activá las fuentes RSS ejecutando rss-sources-preview.sql en Supabase de prueba'},503,origin);}}
   if(url.pathname==='/api/manual/list'&&request.method==='GET'){const rows=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&order=updated_at.desc&limit=100');return reply({rows},200,origin);}
