@@ -155,6 +155,23 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
  await db(env,path,outcome.ok?{state:'draft',post_id:outcome.postId,last_error:outcome.labelsMatch?null:'Revisar etiquetas Blogger'}:{state:'reconcile',last_error:'Respuesta no confirmada'},'PATCH');
  return reply(outcome.ok?{ok:true,post_id:outcome.postId,labels_match:outcome.labelsMatch}:{error:'Respuesta incierta: revisar Blogger antes de repetir'},outcome.ok?200:502,origin);
  }
+ if(url.pathname==='/api/blogger/sync-status'&&request.method==='POST'){
+ if(env.PREVIEW_WRITES_ENABLED!=='true'||!/^\d+$/.test(env.BLOGGER_BLOG_ID||'')||!/^\d+$/.test(env.BLOGGER_QA_BLOG_ID||'')||env.BLOGGER_QA_BLOG_ID===env.BLOGGER_BLOG_ID)return reply({error:'Sincronización QA no habilitada'},403,origin);
+ const input=await request.json();
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.id||''))return reply({error:'Noticia inválida'},400,origin);
+ const path='beat_blogger_queue_preview?article_id=eq.'+input.id;
+ const row=(await db(env,path))[0];
+ if(!row||!/^\d+$/.test(row.post_id||'')||!['draft','published'].includes(row.state))return reply({error:'No existe un envío confirmado para sincronizar'},409,origin);
+ const token=await bloggerAccessToken(env);
+ const response=await fetch('https://www.googleapis.com/blogger/v3/blogs/'+env.BLOGGER_QA_BLOG_ID+'/posts/'+row.post_id+'?view=ADMIN',{headers:{authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)});
+ if(!response.ok)return reply({error:'Blogger no confirmó el estado; registro conservado'},502,origin);
+ const post=await response.json();
+ if(String(post.id)!==row.post_id||String(post.blog?.id)!==env.BLOGGER_QA_BLOG_ID||!['DRAFT','LIVE','SCHEDULED'].includes(post.status))return reply({error:'Respuesta Blogger no reconocida'},502,origin);
+ const state=post.status==='LIVE'?'published':'draft';
+ const updated=await db(env,path+'&post_id=eq.'+row.post_id+'&state=eq.'+row.state,{state},'PATCH');
+ if(!updated.length)return reply({error:'El registro cambió; consultá nuevamente'},409,origin);
+ return reply({distribution:updated[0],remote_status:post.status},200,origin);
+ }
  if(url.pathname==='/api/blogger/status'&&request.method==='GET'){
  const id=url.searchParams.get('id')||'';
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return reply({error:'Noticia inválida'},400,origin);
