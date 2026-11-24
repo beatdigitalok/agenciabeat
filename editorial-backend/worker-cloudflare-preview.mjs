@@ -124,7 +124,13 @@ async function dispatchBloggerPreview(env){
  }catch{await db(env,path,{state:'reconcile',last_error:'Envío incierto: revisar antes de repetir'},'PATCH');return;}
  await db(env,path,outcome.ok?{state:'draft',post_id:outcome.postId,last_error:outcome.labelsMatch?null:'Revisar etiquetas Blogger'}:{state:'reconcile',last_error:'Respuesta no confirmada; revisar Blogger'},'PATCH');
 }
-const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED==='true')await runRSSCampaign(env);await dispatchBloggerPreview(env);},async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
+const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview')return;
+ if(env.BLOGGER_CENTRAL_CONTROL_ENABLED==='true'){
+ const settings=(await db(env,'beat_blogger_settings_preview?id=eq.true&select=enabled,mode'))[0];
+ if(!settings?.enabled||settings.mode==='manual')return;
+ }
+ if(env.RSS_AUTOMATION_ENABLED==='true')await runRSSCampaign(env);
+ await dispatchBloggerPreview(env);},async fetch(request,env){const url=new URL(request.url),origin=request.headers.get('origin')||'',allowed=env.PREVIEW_ORIGIN||'https://agenciabeat-preview.pages.dev';
  if(origin&&origin!==allowed)return reply({error:'Origen no permitido'},403);
  if(env.ENVIRONMENT!=='preview')return reply({error:'Servicio limitado a preview'},503,origin);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':allowed,'access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'authorization,content-type','vary':'Origin'}});
