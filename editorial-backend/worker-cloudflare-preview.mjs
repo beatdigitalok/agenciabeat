@@ -155,6 +155,12 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
  await db(env,path,outcome.ok?{state:'draft',post_id:outcome.postId,last_error:outcome.labelsMatch?null:'Revisar etiquetas Blogger'}:{state:'reconcile',last_error:'Respuesta no confirmada'},'PATCH');
  return reply(outcome.ok?{ok:true,post_id:outcome.postId,labels_match:outcome.labelsMatch}:{error:'Respuesta incierta: revisar Blogger antes de repetir'},outcome.ok?200:502,origin);
  }
+ if(url.pathname==='/api/blogger/status'&&request.method==='GET'){
+ const id=url.searchParams.get('id')||'';
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return reply({error:'Noticia inválida'},400,origin);
+ const rows=await db(env,'beat_blogger_queue_preview?article_id=eq.'+id+'&select=state,post_id,attempted_at,last_error');
+ return reply({distribution:rows[0]||null},200,origin);
+ }
  if(url.pathname==='/api/blogger/settings'&&request.method==='GET'){
  const settings=(await db(env,'beat_blogger_settings_preview?id=eq.true'))[0];
  return reply({settings},200,origin);
