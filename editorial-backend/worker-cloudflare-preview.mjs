@@ -208,7 +208,7 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
    if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');
    if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');
- if(body.source){if(typeof body.source.url!=='string'||typeof body.source.feed_url!=='string'||typeof body.source.title!=='string'||body.source.title.length>1000)throw new InputError('Fuente RSS inválida');let original,feed;try{original=sourceURL(body.source.url);feed=sourceURL(body.source.feed_url);}catch(e){throw new InputError(e.message);}if(original.length>2048||feed.length>2048)throw new InputError('Enlace de fuente demasiado largo');fields.fuentes=[{tipo:'rss',url:original,feed_url:feed,titulo_original:body.source.title}];fields.estado='borrador';
+ if(body.source){if(typeof body.source.url!=='string'||typeof body.source.feed_url!=='string'||typeof body.source.title!=='string'||body.source.title.length>1000)throw new InputError('Fuente RSS inválida');let original,feed;try{original=sourceURL(body.source.url);feed=sourceURL(body.source.feed_url);}catch(e){throw new InputError(e.message);}if(original.length>2048||feed.length>2048)throw new InputError('Enlace de fuente demasiado largo');fields.fuentes=[{tipo:'rss',url:original,feed_url:feed,titulo_original:body.source.title}];fields.estado=body.source.review_required===true?'revision':'borrador';
  const duplicate=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(original)+'&select=id&limit=1');if(duplicate.length)return reply({error:'Esta noticia RSS ya fue capturada, incluso si está en papelera',existing_id:duplicate[0].id},409,origin);
  }
  try{const rows=await db(env,'beat_manual_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},201,origin);}catch(e){if(e.code==='23505')return reply({error:'Esta noticia RSS ya fue capturada'},409,origin);throw e;}}
@@ -273,6 +273,8 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
    if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nFecha de publicación RSS (no fecha del hecho): '+(item.published_at||'No disponible')+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
    const draft=generated.draft;
+   // Sensitive reports remain local review records, never auto-enqueued.
+   const sensitive=/\b(?:denunci\w*|acus\w*|estaf\w*|abus\w*|homicid\w*|suicid\w*|violaci[oó]n|imput\w*|detenid\w*|falleci\w*|muert\w*|presunt\w*)\b/iu.test([item.title,item.body,draft.titulo,draft.contenido].join(' '));
    // Reject newly introduced explicit calendar years before automated persistence.
    const years=text=>new Set(String(text||'').match(/\b(?:19|20)\d{2}\b/g)||[]);
    const sourceYears=years(item.title+' '+item.body);
@@ -284,7 +286,7 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    // La IA puede devolver una bajada vacía. Usar únicamente texto presente en el RSS, sin inventar datos.
    let summary=draft.bajada.trim();
    if(summary.length<45||summary.length>240){const sourceText=item.body.replace(/\s+/g,' ').trim();const firstSentence=sourceText.match(/^.{45,240}?[.!?](?=\s|$)/)?.[0];summary=firstSentence||sourceText.slice(0,240).replace(/\s+\S*$/,'').trim();if(summary.length<45||summary.length>240){result.errors.push('RSS sin texto suficiente para una bajada verificable; entrada omitida');result.skipped++;result.diagnostics.insufficient_feed++;continue;}result.diagnostics.summary_from_rss++;}
-   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:summary,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title}});result.created++;result.diagnostics.created++;}catch(e){if(e.status===409){result.skipped++;result.diagnostics.duplicates++;}else throw e;}
+   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:summary,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title,review_required:sensitive}});result.created++;result.diagnostics.created++;}catch(e){if(e.status===409){result.skipped++;result.diagnostics.duplicates++;}else throw e;}
   }
  }catch(e){result.errors.push(e.name==='TimeoutError'?'Tiempo de consulta agotado':e.message);}
  await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&lease_token=eq.'+source.lease_token,{lease_until:null,lease_token:null,last_checked_at:new Date().toISOString(),last_result:result,last_error:result.errors[0]||null},'PATCH');
