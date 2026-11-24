@@ -56,6 +56,26 @@ const channels=document.createElement('div');channels.className='distribution-ch
 by('aiPanel').hidden=true;
 function show(){const key=location.hash.slice(1);const active=views[key]?key:(window.BeatPreviewAccess.read()?'inicio':'config');for(const [name,v]of Object.entries(views))v.hidden=name!==active;title.textContent=descriptions[active][0];subtitle.textContent=descriptions[active][1];for(const a of nav.querySelectorAll('[data-view]')){if(a.dataset.view===active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');}if(active==='multimedia'&&!by('studioFrame').src)by('studioFrame').src=by('studioFrame').dataset.src;if(active==='mesa'&&!editorialFrame.src)editorialFrame.src=editorialFrame.dataset.src;}
 document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.id==='new'||button.id==='newTop'||button.textContent==='Editar'||button.textContent==='Preparar reescritura'){location.hash='redactar';distribution.hidden=true;const ai=button.textContent==='Preparar reescritura';by('aiPanel').hidden=!ai;by('form').hidden=ai;by('aiPanel').open=true;}if(button.id==='aiApply'){by('aiPanel').hidden=true;by('form').hidden=false;}if(button.id==='logout')location.hash='config';});
+const automation=document.createElement('section');automation.className='card';
+automation.innerHTML='<h2>Modo de trabajo · Blogger QA</h2><p class="muted">Control de envíos a Blogger. La captura RSS conserva su configuración actual.</p><p id="automationStatus" role="status">Consultá el estado del servidor.</p><label for="automationMode">Modo</label><select id="automationMode" disabled><option value="manual">Manual</option><option value="drafts">Automático supervisado</option><option value="publish" disabled>Automático integral (pendiente)</option></select><div><button type="button" id="automationRefresh">Consultar estado</button> <button type="button" id="automationApply" disabled>Aplicar modo</button> <button type="button" id="automationStop">Detener envíos</button></div>';
+views.inicio.prepend(automation);
+let automationBusy=false;
+async function automationAction(action){
+ if(automationBusy)return;automationBusy=true;
+ const status=by('automationStatus'),mode=by('automationMode'),apply=by('automationApply'),refresh=by('automationRefresh'),stop=by('automationStop');
+ refresh.disabled=stop.disabled=apply.disabled=mode.disabled=true;
+ try{
+ const token=by('token').value;
+ if(token.length<32)throw Error('Conectá primero tu sesión editorial.');
+ const body=action==='apply'?{mode:mode.value,enabled:mode.value==='drafts'}:action==='stop'?{}:null;
+ const response=await fetch('https://beat-editorial-preview.beatdigitalok-bac.workers.dev/api/blogger/'+(action==='stop'?'stop':'settings'),{method:body?'POST':'GET',headers:{authorization:'Bearer '+token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const data=await response.json();if(!response.ok||!data.settings)throw Error(data.error||'Configuración no disponible');
+ mode.value=data.settings.mode;status.textContent=(data.settings.enabled?'Envíos habilitados':'Envíos detenidos')+' · '+mode.selectedOptions[0].textContent+(data.notice?' · '+data.notice:'');mode.disabled=apply.disabled=false;
+ }catch(e){status.textContent=e.message; }finally{automationBusy=false;refresh.disabled=stop.disabled=false;}
+}
+by('automationRefresh').onclick=()=>automationAction('read');
+by('automationApply').onclick=()=>{if(by('automationMode').value==='drafts'&&!confirm('¿Habilitar envíos automáticos al blog de prueba?'))return;automationAction('apply');};
+by('automationStop').onclick=()=>automationAction('stop');
 function counts(){by('centralNews').textContent=(by('newsCount').textContent.match(/^\d+/)||['—'])[0];by('centralSources').textContent=String(Math.max(0,by('rssSaved').options.length-1));}
 new MutationObserver(counts).observe(by('newsCount'),{childList:true,subtree:true});new MutationObserver(counts).observe(by('rssSaved'),{childList:true});counts();window.addEventListener('hashchange',show);show();
 })();
