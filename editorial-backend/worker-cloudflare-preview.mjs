@@ -81,7 +81,7 @@ function validateOverrides(value) {
   if (val.length>(key==='contenido'?500000:key==='titulo'?1000:2048)) throw new InputError('Campo demasiado largo');
   if (['titulo','categoria'].includes(key)&&!val.trim()) throw new InputError('Campo vacío');
   if (key==='imagen_url'&&val&&!/^https:\/\//i.test(val)) throw new InputError('Imagen requiere HTTPS');
-  out[key]=val;
+  out[key]=key==='categoria'?val.normalize('NFC').trim().replace(/\s+/g,' ').toLocaleLowerCase('es-AR'):val;
  }return out;
 }
 function effective(row) {return {...row.source,...row.overrides,deleted_at:row.deleted_at,revision:row.revision};}
@@ -100,7 +100,7 @@ function manualFields(value){
   if(key==='estado'&&!['borrador','revision','publicado'].includes(val))throw new InputError('Estado inválido');
   if(key==='imagen_tipo'&&!['sin_imagen','foto','ilustracion_ia'].includes(val))throw new InputError('Tipo de imagen inválido');
   if(key==='imagen_url'&&val){let u;try{u=new URL(val);}catch{throw new InputError('Imagen inválida');}if(u.protocol!=='https:'||u.username||u.password)throw new InputError('Imagen requiere HTTPS');}
-  out[key]=val;
+  out[key]=key==='categoria'?val.normalize('NFC').trim().replace(/\s+/g,' ').toLocaleLowerCase('es-AR'):val;
  }return out;
 }
 async function db(env,path,body,method){const r=await fetch(databaseUrl(env)+'/rest/v1/'+path,{method:method||(body?'POST':'GET'),headers:{apikey:env.SUPABASE_PREVIEW_SERVICE_KEY,authorization:'Bearer '+env.SUPABASE_PREVIEW_SERVICE_KEY,'content-type':'application/json',prefer:'return=representation'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(10000)});if(!r.ok){let payload={};try{payload=await r.json();}catch{}const e=new Error('storage');e.code=payload.code;throw e;}return r.json();}
@@ -125,7 +125,7 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({error:'Escrituras desactivadas'},403,origin);
    const input=body.fields;if(!input||typeof input.nombre!=='string'||!input.nombre.trim()||input.nombre.length>150||typeof input.url!=='string'||input.url.length>2048||typeof input.categoria!=='string'||!input.categoria.trim()||input.categoria.length>200||!['groq','gemini'].includes(input.provider)||typeof input.active!=='boolean')throw new InputError('Datos de fuente inválidos');
    let canonical;try{canonical=sourceURL(input.url);}catch(e){throw new InputError(e.message);}
-   if(input.auto_enabled!==undefined&&typeof input.auto_enabled!=='boolean')throw new InputError('Automatización inválida');if(input.interval_minutes!==undefined&&![15,30,60,180,360,1440].includes(input.interval_minutes))throw new InputError('Frecuencia inválida');if(input.max_items!==undefined&&![1,2,3].includes(input.max_items))throw new InputError('Límite inválido');const fields={nombre:input.nombre.trim(),url:canonical,categoria:input.categoria.trim(),provider:input.provider,active:input.active,...(input.auto_enabled!==undefined?{auto_enabled:input.auto_enabled}:{}),...(input.interval_minutes!==undefined?{interval_minutes:input.interval_minutes}:{}),...(input.max_items!==undefined?{max_items:input.max_items}:{}),updated_at:new Date().toISOString()};
+   if(input.auto_enabled!==undefined&&typeof input.auto_enabled!=='boolean')throw new InputError('Automatización inválida');if(input.interval_minutes!==undefined&&![15,30,60,180,360,1440].includes(input.interval_minutes))throw new InputError('Frecuencia inválida');if(input.max_items!==undefined&&![1,2,3].includes(input.max_items))throw new InputError('Límite inválido');const fields={nombre:input.nombre.trim(),url:canonical,categoria:input.categoria.normalize('NFC').trim().replace(/\s+/g,' ').toLocaleLowerCase('es-AR'),provider:input.provider,active:input.active,...(input.auto_enabled!==undefined?{auto_enabled:input.auto_enabled}:{}),...(input.interval_minutes!==undefined?{interval_minutes:input.interval_minutes}:{}),...(input.max_items!==undefined?{max_items:input.max_items}:{}),updated_at:new Date().toISOString()};
    try{let rows;if(body.id){if(!/^[0-9a-f-]{36}$/i.test(body.id)||!Number.isSafeInteger(body.expected_revision)||body.expected_revision<1)throw new InputError('Revisión de fuente inválida');rows=await db(env,'beat_rss_sources_preview?sitio_id=eq.agenciabeat&id=eq.'+body.id+'&revision=eq.'+body.expected_revision,{...fields,revision:body.expected_revision+1},'PATCH');if(!rows.length)return reply({error:'La fuente cambió en otra sesión. Recargá las fuentes.'},409,origin);}else rows=await db(env,'beat_rss_sources_preview',{...fields,sitio_id:'agenciabeat'});return reply({row:rows[0]},body.id?200:201,origin);}catch(e){if(e instanceof InputError)throw e;if(e.code==='23505')return reply({error:'Esta URL ya está configurada como fuente'},409,origin);throw e;}
   }
   if(url.pathname==='/api/rss/fetch'){
