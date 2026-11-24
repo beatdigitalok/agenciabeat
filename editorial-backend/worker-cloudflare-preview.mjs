@@ -214,7 +214,7 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    if(exists.length){result.skipped++;result.diagnostics.duplicates++;continue;}
    const fresh=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
    if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
-   if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
+   if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nFecha de publicación RSS (no fecha del hecho): '+(item.published_at||'No disponible')+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
    const draft=generated.draft;
    // Reject newly introduced explicit calendar years before automated persistence.
    const years=text=>new Set(String(text||'').match(/\b(?:19|20)\d{2}\b/g)||[]);
