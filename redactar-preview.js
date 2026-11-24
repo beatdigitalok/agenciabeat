@@ -39,3 +39,19 @@ $('rssFetch').onclick=()=>run(async()=>{const button=$('rssFetch');button.disabl
 $('openRSS').onclick=()=>{$('rssPanel').open=true;};
 
 $('rssRun').onclick=()=>run(async()=>{if(!selectedFeed)throw Error('Guardá o elegí una fuente primero');const button=$('rssRun');button.disabled=true;$('rssStatus').textContent='Capturando y reescribiendo. Esperá: puede tardar hasta varios minutos.';try{const result=await api('/api/rss/campaign/run',{source_id:selectedFeed.id});await loadSources();await load();$('rssStatus').textContent=result.message||('Campaña finalizada: '+result.created+' borradores creados · '+result.skipped+' omitidos'+(result.errors.length?' · '+result.errors.join('; '):''));$('msg').textContent='Los borradores capturados están en Mis noticias y requieren revisión.';}finally{button.disabled=false;}});
+
+const bloggerSend=document.createElement('button');
+bloggerSend.type='button';bloggerSend.textContent='Enviar borrador a Blogger QA';
+$('form').append(bloggerSend);
+bloggerSend.onclick=()=>run(async()=>{
+ if(!current||current.deleted_at||current.estado!=='borrador')throw Error('Guardá primero la noticia aprobada como borrador.');
+ for(const key of ['titulo','bajada','contenido','categoria','imagen_url','imagen_tipo','estado']){
+ if($(key).value!==String(current[key]??''))throw Error('Guardá los cambios antes de enviar.');
+ }
+ if(!confirm('¿Enviar esta revisión como borrador al blog de pruebas?'))return;
+ bloggerSend.disabled=true;
+ try{
+ const result=await api('/api/blogger/send-draft',{id:current.id,expected_revision:current.revision,approved:true});
+ $('msg').textContent='Borrador confirmado en Blogger QA · '+result.post_id+(result.labels_match?'':' · Revisar categoría');
+ }finally{bloggerSend.disabled=false;}
+});
