@@ -216,6 +216,11 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
    if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
    const draft=generated.draft;
+   // Reject newly introduced explicit calendar years before automated persistence.
+   const years=text=>new Set(String(text||'').match(/\b(?:19|20)\d{2}\b/g)||[]);
+   const sourceYears=years(item.title+' '+item.body);
+   const unsupportedYears=[...years([draft.titulo,draft.bajada,draft.contenido].join(' '))].filter(year=>!sourceYears.has(year));
+   if(unsupportedYears.length){result.errors.push('Control editorial: año no respaldado por el RSS; requiere revisión manual');result.skipped++;result.diagnostics.ai_pending++;continue;}
    const again=await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&select=active,auto_enabled,revision');
    if(!again[0]?.active||again[0].revision!==source.revision||(!force&&!again[0].auto_enabled)){result.errors.push('Campaña modificada durante la reescritura; propuesta descartada');break;}
    if(draft.pendientes.length){result.errors.push('La IA indicó datos pendientes: la entrada requiere captura y revisión manual');result.skipped++;result.diagnostics.ai_pending++;continue;}
