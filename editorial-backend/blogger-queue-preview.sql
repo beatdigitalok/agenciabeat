@@ -38,4 +38,18 @@ begin
 end; $$;
 revoke all on function public.beat_blogger_claim_preview() from public,anon,authenticated;
 grant execute on function public.beat_blogger_claim_preview() to service_role;
+-- Atomic enqueue: RSS article and dispatch record share the same transaction.
+create function public.beat_blogger_enqueue_rss_preview() returns trigger
+language plpgsql security invoker set search_path=public as $
+begin
+ if new.estado='borrador' and new.deleted_at is null and new.fuentes->0->>'tipo'='rss'
+ and exists(select 1 from public.beat_blogger_settings_preview where id=true and enabled and mode in ('drafts','publish')) then
+ insert into public.beat_blogger_queue_preview(article_id) values(new.id) on conflict(article_id) do nothing;
+ end if;
+ return new;
+end; $;
+revoke all on function public.beat_blogger_enqueue_rss_preview() from public,anon,authenticated;
+grant execute on function public.beat_blogger_enqueue_rss_preview() to service_role;
+create trigger beat_blogger_enqueue_rss_preview after insert on public.beat_manual_preview
+for each row execute function public.beat_blogger_enqueue_rss_preview();
 commit;
