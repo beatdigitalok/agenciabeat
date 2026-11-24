@@ -178,8 +178,8 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!
   if(url.pathname==='/api/editorial/validate'){const source=normalizePost(body.post,env.BLOGGER_BLOG_ID);return reply({dry_run:true,source},200,origin);}
   if(url.pathname==='/api/editorial/sync'){
    postId=String(body.post_id||'');if(!/^\d+$/.test(postId)||!/^\d+$/.test(env.BLOGGER_BLOG_ID||''))throw new InputError('ID inválido');
-   if(!env.BLOGGER_ACCESS_TOKEN)throw Error('config');
-   const r=await fetch(`https://www.googleapis.com/blogger/v3/blogs/${env.BLOGGER_BLOG_ID}/posts/${postId}?view=ADMIN`,{headers:{authorization:'Bearer '+env.BLOGGER_ACCESS_TOKEN},signal:AbortSignal.timeout(10000)});
+   const bloggerToken=await bloggerAccessToken(env);
+   const r=await fetch(`https://www.googleapis.com/blogger/v3/blogs/${env.BLOGGER_BLOG_ID}/posts/${postId}?view=ADMIN`,{headers:{authorization:'Bearer '+bloggerToken},signal:AbortSignal.timeout(10000)});
    if(!r.ok)return reply({error:'No se pudo leer Blogger. No se cambió la copia.'},502,origin);
    payload=normalizePost(await r.json(),env.BLOGGER_BLOG_ID);action='sync';
    if(env.PREVIEW_WRITES_ENABLED!=='true')return reply({dry_run:true,source:payload},200,origin);
@@ -196,6 +196,20 @@ const worker={async scheduled(controller,env,ctx){if(env.RSS_AUTOMATION_ENABLED!
 
 export default worker;
 
+// OAuth refresh credentials are Worker secrets only. Never return or log tokens.
+async function bloggerAccessToken(env){
+ const credentials=[env.BLOGGER_CLIENT_ID,env.BLOGGER_CLIENT_SECRET,env.BLOGGER_REFRESH_TOKEN];
+ if(credentials.some(Boolean)){
+  if(!credentials.every(Boolean))throw Error('Configuración OAuth Blogger incompleta');
+  const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:credentials[0],client_secret:credentials[1],refresh_token:credentials[2],grant_type:'refresh_token'}),signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw Error('No se pudo renovar autorización Blogger');
+  const data=await response.json();
+  if(typeof data.access_token!=='string'||!data.access_token)throw Error('Respuesta OAuth Blogger inválida');
+  return data.access_token;
+ }
+ if(!env.BLOGGER_ACCESS_TOKEN)throw Error('Configuración Blogger incompleta');
+ return env.BLOGGER_ACCESS_TOKEN;
+}
 async function runRSSCampaign(env,sourceId=null,force=false){
  if(env.ENVIRONMENT!=='preview'||env.PREVIEW_WRITES_ENABLED!=='true'||env.AI_PREVIEW_ENABLED!=='true'||!env.EDITORIAL_ADMIN_TOKEN||env.EDITORIAL_ADMIN_TOKEN.length<32)throw Error('Configuración de campañas incompleta');
  databaseUrl(env);
