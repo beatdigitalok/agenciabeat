@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {buildBloggerDraft,sendBloggerDraft} from './blogger-draft.mjs';
+const article={titulo:'Noticia QA',bajada:'Resumen',contenido:'Texto <script> & prueba',categoria:' POLÍTICA '};
+const env={ENVIRONMENT:'preview',BLOGGER_DRAFT_WRITES_ENABLED:'true',BLOGGER_QA_BLOG_ID:'123',BLOGGER_BLOG_ID:'456'};
+const payload=buildBloggerDraft(article);
+assert.deepEqual(payload.labels,['política']);
+assert.ok(payload.content.includes('&lt;script&gt; &amp;'));
+let calls=0;
+const fetcher=async(url,options)=>{calls++;assert.equal(url,'https://www.googleapis.com/blogger/v3/blogs/123/posts?isDraft=true');assert.equal(options.method,'POST');return new Response(JSON.stringify({id:'789',blog:{id:'123'},status:'DRAFT',labels:['política']}));};
+const args={env,article,token:'test-only',fetcher};
+assert.deepEqual(await sendBloggerDraft(args),{ok:true,postId:'789',labelsMatch:true});
+for(const override of [{ENVIRONMENT:'production'},{BLOGGER_DRAFT_WRITES_ENABLED:'false'},{BLOGGER_QA_BLOG_ID:'456'}])await assert.rejects(sendBloggerDraft({...args,env:{...env,...override}}));
+assert.equal(calls,1);
+const limited=await sendBloggerDraft({...args,fetcher:async()=>new Response('',{status:429,headers:{'Retry-After':'60'}})});
+assert.equal(limited.retryAfter,'60');assert.equal(limited.requiresReconciliation,true);
+const uncertain=await sendBloggerDraft({...args,fetcher:async()=>new Response(JSON.stringify({id:'789',blog:{id:'123'},status:'LIVE'}))});
+assert.equal(uncertain.ok,false);
+console.log('Blogger draft QA tests passed');
