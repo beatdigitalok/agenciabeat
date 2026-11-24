@@ -71,4 +71,20 @@ async function refreshBloggerStatus(){
  bloggerStatus.textContent='Blogger QA: '+(d?(bloggerStates[d.state]||d.state)+(d.post_id?' · ID '+d.post_id:'')+(d.last_error?' · '+d.last_error:''):'Sin envío registrado');
  }catch(e){if(current?.id===id)bloggerStatus.textContent='Blogger QA: '+e.message;}
 }
-bloggerRefresh.onclick=()=>run(refreshBloggerStatus);
+bloggerRefresh.textContent='Actualizar estado de Blogger';
+bloggerRefresh.onclick=()=>run(async()=>{
+ const id=current?.id;
+ if(!id){await refreshBloggerStatus();return;}
+ bloggerRefresh.disabled=true;
+ try{
+ const local=await api('/api/blogger/status?id='+encodeURIComponent(id));
+ if(current?.id!==id)return;
+ const d=local.distribution;
+ if(!d?.post_id||!['draft','published'].includes(d.state)){await refreshBloggerStatus();return;}
+ const result=await api('/api/blogger/sync-status',{id});
+ if(current?.id!==id)return;
+ const remote={LIVE:'Publicado',DRAFT:'Borrador confirmado',SCHEDULED:'Publicación programada'};
+ bloggerStatus.textContent='Blogger QA: '+(remote[result.remote_status]||'Estado no reconocido')+' · ID '+d.post_id;
+ }catch(e){if(current?.id===id)bloggerStatus.textContent='No se pudo sincronizar: '+e.message+' · Registro anterior conservado.';}
+ finally{bloggerRefresh.disabled=false;}
+});
