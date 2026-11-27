@@ -2,7 +2,7 @@
 const API='https://beat-editorial-preview.beatdigitalok-bac.workers.dev';
 const $=id=>document.getElementById(id);let current=null,busy=false,rowsCache=[],pendingSource=null;
 const access=window.BeatPreviewAccess;
-function forget(){access.clear();$('token').value='';rowsCache=[];renderList();renderHomeActivity();savedFeeds=[];selectedFeed=null;$('rssSaved').replaceChildren(new Option('Elegir fuente',''));selectFeed(null);$('rssItems').replaceChildren();$('accessPanel').open=true;}
+function forget(){const panel=$('homeBloggerActivity');if(panel)panel.textContent='Conectá tu sesión para consultar Blogger.';access.clear();$('token').value='';rowsCache=[];renderList();renderHomeActivity();savedFeeds=[];selectedFeed=null;$('rssSaved').replaceChildren(new Option('Elegir fuente',''));selectFeed(null);$('rssItems').replaceChildren();$('accessPanel').open=true;}
 $('token').value=access.read();
 window.addEventListener('storage',()=>{$('token').value=access.read();if(!$('token').value){edit(null);$('list').replaceChildren();}});
 $('logout').onclick=()=>{forget();edit(null);$('list').replaceChildren();$('msg').textContent='Sesión cerrada';};
@@ -125,7 +125,7 @@ function renderHomeActivity(){
  add('Publicada en prueba · última actualización',latest(rows.filter(r=>r.estado==='publicado'),'updated_at'),'updated_at',true);
  const review=rows.filter(r=>r.estado==='revision');if(review.length){const b=document.createElement('button');b.type='button';b.textContent=review.length+' noticias requieren revisión';b.onclick=()=>{$('newsState').value='revision';$('newsSearch').value='';renderList();location.hash='noticias';};panel.append(b);}
 }
-window.refreshEditorialActivity=()=>run(async()=>{await load();});
+window.refreshEditorialActivity=()=>run(async()=>{await load();await refreshHomeBlogger();});
 window.renderEditorialActivity=renderHomeActivity;
 
  // Read-only refresh, restricted to visible dashboard and authenticated session.
@@ -138,7 +138,7 @@ async function refreshHomeInBackground(){
  const data=await api('/api/manual/list');
  if(busy||document.hidden||$('token').value!==token||!['','#inicio'].includes(location.hash))return;
  if(!Array.isArray(data.rows))throw Error('Respuesta de noticias inválida');
- rowsCache=data.rows;renderList();renderHomeActivity();
+ rowsCache=data.rows;renderList();renderHomeActivity();await refreshHomeBlogger();
  const status=$('activityFreshness');if(status)status.textContent='Actualizado a las '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
  }catch(e){const status=$('activityFreshness');if(status)status.textContent='No se pudo actualizar. Se muestran los últimos datos disponibles.';}
  finally{activityRefreshing=false;}
@@ -146,3 +146,20 @@ async function refreshHomeInBackground(){
 setInterval(refreshHomeInBackground,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshHomeInBackground();});
 window.addEventListener('hashchange',refreshHomeInBackground);
+
+async function refreshHomeBlogger(){
+ const panel=$('homeBloggerActivity'),token=$('token').value;
+ if(!panel||token.length<32)return;
+ try{
+ const data=await api('/api/blogger/activity');
+ if($('token').value!==token)return;
+ panel.replaceChildren();
+ const post=data.publication;
+ if(!post){panel.textContent='Sin publicaciones confirmadas en Blogger de prueba.';return;}
+ const label=document.createElement('small');label.textContent='Publicación confirmada · Blogger de prueba';
+ const title=document.createElement('strong');title.textContent=post.title||'Noticia publicada';
+ const date=document.createElement('p');date.textContent=Number.isFinite(Date.parse(post.published))?new Date(post.published).toLocaleString('es-AR'):'Fecha no disponible';
+ panel.append(label,title,date);
+ try{const u=new URL(post.url);if(u.protocol==='https:'&&!u.username&&!u.password){const a=document.createElement('a');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Ver publicación';panel.append(a);}}catch{}
+ }catch(e){if($('token').value===token)panel.textContent='Blogger: no se pudo confirmar la actividad. Revisá la conexión en Ajustes.';}
+}
