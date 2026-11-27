@@ -177,6 +177,19 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
  if(!updated.length)return reply({error:'El registro cambió; consultá nuevamente'},409,origin);
  return reply({distribution:updated[0],remote_status:post.status},200,origin);
  }
+ if(url.pathname==='/api/blogger/activity'&&request.method==='GET'){
+ const rows=await db(env,'beat_blogger_queue_preview?state=eq.published&select=article_id,post_id,attempted_at&order=attempted_at.desc.nullslast&limit=1');
+ const row=rows[0];
+ if(!row)return reply({publication:null},200,origin);
+ if(!/^\d+$/.test(String(row.post_id||''))||!/^\d+$/.test(env.BLOGGER_QA_BLOG_ID||'')||!/^\d+$/.test(env.BLOGGER_BLOG_ID||'')||env.BLOGGER_QA_BLOG_ID===env.BLOGGER_BLOG_ID)return reply({error:'Blogger de prueba no configurado'},503,origin);
+ const token=await bloggerAccessToken(env);
+ if(!token)return reply({error:'Blogger no conectado'},503,origin);
+ const response=await fetch('https://www.googleapis.com/blogger/v3/blogs/'+env.BLOGGER_QA_BLOG_ID+'/posts/'+row.post_id+'?view=ADMIN',{headers:{authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)});
+ if(!response.ok)return reply({error:'No se pudo confirmar la publicación'},502,origin);
+ const post=await response.json();
+ if(String(post.id)!==String(row.post_id)||String(post.blog?.id)!==env.BLOGGER_QA_BLOG_ID||post.status!=='LIVE')return reply({publication:null},200,origin);
+ return reply({publication:{title:post.title,url:post.url,published:post.published,article_id:row.article_id,environment:'QA'}},200,origin);
+ }
  if(url.pathname==='/api/blogger/status'&&request.method==='GET'){
  const id=url.searchParams.get('id')||'';
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))return reply({error:'Noticia inválida'},400,origin);
