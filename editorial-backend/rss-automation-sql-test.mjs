@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite();await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
+for(const name of ['manual-preview.sql','rss-sources-preview.sql','rss-automation-preview.sql'])await db.exec(await readFile(new URL('./'+name,import.meta.url),'utf8'));
+const inserted=await db.query("insert into beat_rss_sources_preview(nombre,url,provider) values ('Fuente','https://news.example.com/rss','groq') returning id");const id=inserted.rows[0].id;
+await db.exec('set role service_role');let r=await db.query('select * from beat_rss_preview_claim(null,false)');assert.equal(r.rows.length,0);
+r=await db.query('select * from beat_rss_preview_claim($1,true)',[id]);assert.equal(r.rows.length,1);assert.ok(r.rows[0].lease_token);
+r=await db.query('select * from beat_rss_preview_claim($1,true)',[id]);assert.equal(r.rows.length,0);
+await db.exec("update beat_rss_sources_preview set auto_enabled=true,lease_until=now()-interval '1 minute',last_run_at=now()-interval '2 hours'");
+r=await db.query('select * from beat_rss_preview_claim(null,false)');assert.equal(r.rows.length,1);
+r=await db.query('select * from beat_rss_preview_claim(null,false)');assert.equal(r.rows.length,0);
+await db.exec('reset role; set role anon');await assert.rejects(db.query('select * from beat_rss_preview_claim(null,false)'));await assert.rejects(db.query('select * from beat_rss_sources_preview'));
+await db.close();console.log('SQL validado: migraciones, claim único, pausa, vencimiento, frecuencia y permisos.');
