@@ -88,3 +88,23 @@ bloggerRefresh.onclick=()=>run(async()=>{
  }catch(e){if(current?.id===id)bloggerStatus.textContent='No se pudo sincronizar: '+e.message+' · Registro anterior conservado.';}
  finally{bloggerRefresh.disabled=false;}
 });
+
+ // Manual batch capture: reuse existing server claims, never bypass source eligibility.
+window.captureAllEditorialCampaigns=()=>run(async()=>{
+ const button=document.getElementById('captureAll');if(!button)return;
+ button.disabled=true;const status=document.getElementById('captureAllStatus');
+ let created=0,skipped=0,failed=0,completed=0;
+ try{
+ await loadSources();
+ const eligible=savedFeeds.filter(row=>row.active===true);
+ if(!eligible.length){status.textContent='No hay campañas activas. Configurá una en Campañas RSS.';return;}
+ for(const source of eligible){
+ if($('token').value.length<32){status.textContent='Sesión cerrada. Captura interrumpida.';return;}
+ status.textContent='Capturando '+(completed+1)+' de '+eligible.length+': '+source.nombre;
+ try{const result=await api('/api/rss/campaign/run',{source_id:source.id});created+=Number(result.created)||0;skipped+=Number(result.skipped)||0;if(result.errors?.length)failed++;}catch(e){failed++;}finally{completed++;}
+ }
+ await loadSources();await load();
+ status.textContent='Captura finalizada: '+created+' noticias nuevas, '+skipped+' omitidas. '+(failed?failed+' campañas requieren atención.':'Sin errores de campaña informados.');
+ }catch(e){status.textContent='No se pudo completar la captura: '+e.message;}
+ finally{button.disabled=false;}
+});
