@@ -127,3 +127,22 @@ function renderHomeActivity(){
 }
 window.refreshEditorialActivity=()=>run(async()=>{await load();});
 window.renderEditorialActivity=renderHomeActivity;
+
+ // Read-only refresh, restricted to visible dashboard and authenticated session.
+let activityRefreshing=false;
+async function refreshHomeInBackground(){
+ if(activityRefreshing||busy||document.hidden||!['','#inicio'].includes(location.hash)||$('token').value.length<32)return;
+ const token=$('token').value;
+ activityRefreshing=true;
+ try{
+ const data=await api('/api/manual/list');
+ if(busy||document.hidden||$('token').value!==token||!['','#inicio'].includes(location.hash))return;
+ if(!Array.isArray(data.rows))throw Error('Respuesta de noticias inválida');
+ rowsCache=data.rows;renderList();renderHomeActivity();
+ const status=$('activityFreshness');if(status)status.textContent='Actualizado a las '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+ }catch(e){const status=$('activityFreshness');if(status)status.textContent='No se pudo actualizar. Se muestran los últimos datos disponibles.';}
+ finally{activityRefreshing=false;}
+}
+setInterval(refreshHomeInBackground,60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshHomeInBackground();});
+window.addEventListener('hashchange',refreshHomeInBackground);
