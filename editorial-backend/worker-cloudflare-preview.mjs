@@ -41,16 +41,16 @@ function parseFeedEntries(xml,feed){
  const clean=s=>decode(s).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
  const url=s=>{if(!s)return '';try{return sourceURL(new URL(decode(s).trim(),feed).href);}catch{return '';}};
  let stack=[],current=null,entries=[],rootSeen=false;const seen=new Set();
- const finish=()=>{if(!current)return;const title=clean(current.title).slice(0,1000),original=url(current.link||current.guid),body=clean(current.encoded||current.content||current.description||current.summary).slice(0,25000);if(title&&original&&!seen.has(original)){seen.add(original);entries.push({title,url:original,body,image:url(current.image),feed_url:feed});}current=null;};
+ const finish=()=>{if(!current)return;const title=clean(current.title).slice(0,1000),original=url(current.link||current.guid),body=clean(current.encoded||current.content||current.description||current.summary).slice(0,25000);if(title&&original&&!seen.has(original)){seen.add(original);entries.push({title,url:original,body,image:url(current.image),feed_url:feed,categories:(current.categories||[]).map(clean).filter(Boolean).slice(0,20),published_at:(()=>{const v=clean(current.pubDate||current.published||current.date);return /\b\d{4}\b/.test(v)&&Number.isFinite(Date.parse(v))?new Date(v).toISOString():null;})()});}current=null;};
  for(const match of xml.matchAll(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<[^>]*>|[^<]+/g)){
   const token=match[0];if(token.startsWith('<!--')||token.startsWith('<?'))continue;
   if(token.startsWith('<![CDATA[')||!token.startsWith('<')){if(current){const value=token.startsWith('<![CDATA[')?token.slice(9,-3):decode(token);for(const frame of stack)if(frame.capture){current[frame.capture]=(current[frame.capture]||'')+value;if(current[frame.capture].length>60000)throw Error('Entrada RSS demasiado grande');}}continue;}
-  if(token.startsWith('</')){const name=token.slice(2,-1).trim();const frame=stack.pop();if(!frame||frame.name!==name)throw Error('XML RSS mal formado');if(frame.entry){finish();if(entries.length>=40)break;}continue;}
+  if(token.startsWith('</')){const name=token.slice(2,-1).trim();const frame=stack.pop();if(!frame||frame.name!==name)throw Error('XML RSS mal formado');if(frame.capture==='category'&&current){(current.categories??=[]).push(current.category||'');delete current.category;}if(frame.entry){finish();if(entries.length>=40)break;}continue;}
   if(token.startsWith('<!'))throw Error('Declaración XML no admitida');
   const m=token.match(/^<([A-Za-z_][\w:.-]*)\b/);if(!m)throw Error('XML RSS mal formado');const name=m[1],local=name.split(':').pop();const attrs={};for(const a of token.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g))attrs[a[1]]=decode(a[2]??a[3]);const self=/\/\s*>$/.test(token);
   if(!rootSeen){if(!['rss','feed','RDF'].includes(local))throw Error('No es RSS/Atom');rootSeen=true;}
   const entry=['item','entry'].includes(local);if(entry){if(current)throw Error('Entrada RSS anidada');current={};}
-  let capture=null;if(current&&['title','guid','encoded','content','description','summary'].includes(local)&&!attrs.url)capture=local;
+  let capture=null;if(current&&stack.at(-1)?.entry&&local==='category'){if(attrs.term)(current.categories??=[]).push(attrs.term);else if(!self)capture='category';}if(current&&stack.at(-1)?.entry&&['pubDate','published','date'].includes(local))capture=local;if(current&&['title','guid','encoded','content','description','summary'].includes(local)&&!attrs.url)capture=local;
   if(current&&local==='link'&&(!attrs.rel||attrs.rel==='alternate')){if(attrs.href)current.link=attrs.href;else capture='link';}
   if(current&&['enclosure','thumbnail','content'].includes(local)&&attrs.url&&((attrs.type||'').startsWith('image/')||local==='thumbnail'||attrs.medium==='image'))current.image=attrs.url;
   if(!self){stack.push({name,capture,entry});if(stack.length>64)throw Error('XML demasiado anidado');}else if(entry)finish();
@@ -62,6 +62,11 @@ function parseFeedEntries(xml,feed){
 class InputError extends Error {}
 const categories = ['politica','economia argentina','gremiales','judiciales','sociedad','deportes','espectaculos','internacionales','informacion general'];
 const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/-/g,' ');
+function rssCategory(item,fallback){
+ const aliases={'economia':'economia argentina','finanzas':'economia argentina','politica nacional':'politica','deporte':'deportes','cultura':'espectaculos','espectaculo':'espectaculos','mundo':'internacionales','internacional':'internacionales','sindicatos':'gremiales','justicia':'judiciales','policiales':'judiciales'};
+ const matches=[...new Set((item.categories||[]).map(norm).map(x=>aliases[x]||x).filter(x=>categories.includes(x)))];
+ return {category:matches.length===1?matches[0]:fallback,origin:matches.length===1?'rss':'campaign',conflict:matches.length>1};
+}
 function normalizePost(post, blogId) {
  if (!post || !/^\d+$/.test(post.id||'') || String(post.blog?.id)!==String(blogId)) throw new InputError('Identidad Blogger inválida');
  if (!['LIVE','DRAFT','SCHEDULED'].includes(post.status)) throw new InputError('Se requiere status de Blogger ADMIN; no se infiere publicación por fecha');
@@ -249,6 +254,8 @@ const worker={async scheduled(controller,env,ctx){if(env.ENVIRONMENT!=='preview'
    if(!env.SUPABASE_PREVIEW_SERVICE_KEY)throw Error('config');
    if(url.pathname==='/api/manual/create'){const fields=manualFields(body.fields);if(!fields.titulo)throw new InputError('Título requerido');
  if(body.source){if(typeof body.source.url!=='string'||typeof body.source.feed_url!=='string'||typeof body.source.title!=='string'||body.source.title.length>1000)throw new InputError('Fuente RSS inválida');let original,feed;try{original=sourceURL(body.source.url);feed=sourceURL(body.source.feed_url);}catch(e){throw new InputError(e.message);}if(original.length>2048||feed.length>2048)throw new InputError('Enlace de fuente demasiado largo');fields.fuentes=[{tipo:'rss',url:original,feed_url:feed,titulo_original:body.source.title}];fields.estado=body.source.review_required===true?'revision':'borrador';
+ if(Array.isArray(body.source.original_categories))fields.fuentes[0].original_categories=body.source.original_categories.filter(x=>typeof x==='string').slice(0,20).map(x=>x.slice(0,200));
+ if(['rss','campaign'].includes(body.source.category_origin))fields.fuentes[0].category_origin=body.source.category_origin;
  if(fields.estado==='revision'&&Array.isArray(body.source.review_notes))fields.fuentes[0].review_notes=body.source.review_notes.filter(x=>typeof x==='string').slice(0,20).map(x=>x.slice(0,500));
  const duplicate=await db(env,'beat_manual_preview?sitio_id=eq.agenciabeat&fuentes->0->>url=eq.'+encodeURIComponent(original)+'&select=id&limit=1');if(duplicate.length)return reply({error:'Esta noticia RSS ya fue capturada, incluso si está en papelera',existing_id:duplicate[0].id},409,origin);
  }
@@ -314,6 +321,7 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    if(!fresh[0]?.active||fresh[0].revision!==source.revision||(!force&&!fresh[0].auto_enabled)){result.errors.push('La campaña cambió o fue pausada; ejecución detenida');break;}
    if(attempted>=source.max_items)break;attempted++;const generated=await call('/api/manual/generate',{provider:source.provider,material:'Fuente: '+item.url+'\nFecha de publicación RSS (no fecha del hecho): '+(item.published_at||'No disponible')+'\nTítulo original: '+item.title+'\nContenido RSS: '+item.body});
    const draft=generated.draft;
+   const classification=rssCategory(item,source.categoria);
    // Sensitive reports remain local review records, never auto-enqueued.
    const sensitive=/\b(?:denunci\w*|acus\w*|estaf\w*|abus\w*|homicid\w*|suicid\w*|violaci[oó]n|imput\w*|detenid\w*|falleci\w*|muert\w*|presunt\w*)\b/iu.test([item.title,item.body,draft.titulo,draft.contenido].join(' '));
    // Reject newly introduced explicit calendar years before automated persistence.
@@ -328,7 +336,7 @@ async function runRSSCampaign(env,sourceId=null,force=false){
    // La IA puede devolver una bajada vacía. Usar únicamente texto presente en el RSS, sin inventar datos.
    let summary=draft.bajada.trim();
    if(summary.length<45||summary.length>240){const sourceText=item.body.replace(/\s+/g,' ').trim();const firstSentence=sourceText.match(/^.{45,240}?[.!?](?=\s|$)/)?.[0];summary=firstSentence||sourceText.slice(0,240).replace(/\s+\S*$/,'').trim();if(summary.length<45||summary.length>240){result.errors.push('RSS sin texto suficiente para una bajada verificable; entrada omitida');result.skipped++;result.diagnostics.insufficient_feed++;continue;}result.diagnostics.summary_from_rss++;}
-   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:summary,contenido:draft.contenido,categoria:source.categoria,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title,review_required:sensitive||needsReview,review_notes:draft.pendientes}});result.created++;result.diagnostics.created++;}catch(e){if(e.status===409){result.skipped++;result.diagnostics.duplicates++;}else throw e;}
+   try{await call('/api/manual/create',{fields:{titulo:draft.titulo,bajada:summary,contenido:draft.contenido,categoria:classification.category,imagen_url:item.image||'',imagen_tipo:item.image?'foto':'sin_imagen',estado:'borrador'},source:{url:item.url,feed_url:feed.feed_url,title:item.title,review_required:sensitive||needsReview||classification.conflict,review_notes:[...draft.pendientes,...(classification.conflict?['El RSS contiene varias categorías reconocidas; confirmar sección.']:[])],original_categories:item.categories,category_origin:classification.origin}});result.created++;result.diagnostics.created++;}catch(e){if(e.status===409){result.skipped++;result.diagnostics.duplicates++;}else throw e;}
   }
  }catch(e){result.errors.push(e.name==='TimeoutError'?'Tiempo de consulta agotado':e.message);}
  await db(env,'beat_rss_sources_preview?id=eq.'+source.id+'&sitio_id=eq.agenciabeat&lease_token=eq.'+source.lease_token,{lease_until:null,lease_token:null,last_checked_at:new Date().toISOString(),last_result:result,last_error:result.errors[0]||null},'PATCH');
